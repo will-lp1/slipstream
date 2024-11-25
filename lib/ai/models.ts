@@ -11,9 +11,9 @@ export const models: Array<Model> = [
   {
     id: 'claude-haiku',
     label: 'Claude Haiku',
-    apiIdentifier: 'claude-haiku-v1',
+    apiIdentifier: 'claude-haiku-20240307',
     description: 'Fast and efficient model for everyday tasks',
-  }
+  },
 ] as const;
 
 export const DEFAULT_MODEL_NAME: string = 'claude-haiku';

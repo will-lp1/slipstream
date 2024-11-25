@@ -147,3 +147,90 @@ export const suggestionsPlugin = new Plugin({
     },
   },
 });
+
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export interface Database {
+  public: {
+    Tables: {
+      chat: {
+        Row: {
+          id: string
+          created_at: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          title: string
+          user_id: string
+        }
+      }
+      message: {
+        Row: {
+          id: string
+          created_at: string
+          content: string
+          role: string
+          chat_id: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          content: string
+          role: string
+          chat_id: string
+        }
+      }
+      document: {
+        Row: {
+          id: string
+          created_at: string
+          content: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          content: string
+          user_id: string
+        }
+      }
+      suggestion: {
+        Row: {
+          id: string
+          created_at: string
+          content: string
+          document_id: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          content: string
+          document_id: string
+        }
+      }
+      embeddings: {
+        Row: {
+          id: string
+          content: string
+          embedding: number[]
+          document_id: string
+        }
+        Insert: {
+          id?: string
+          content: string
+          embedding: number[]
+          document_id: string
+        }
+      }
+    }
+  }
+}
