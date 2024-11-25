@@ -1,7 +1,11 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { getChatsByUserId } from '@/lib/db/queries';
+import { unstable_noStore as noStore } from 'next/cache';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  noStore();
   const supabase = createServerClient();
   const { data: { session } } = await supabase.auth.getSession();
 

@@ -153,44 +153,57 @@ export function MultimodalInput({
         body: formData,
       });
 
-      if (response.ok) {
+      if (!response.ok) {
         const data = await response.json();
-        const { url, pathname, contentType } = data;
-
-        return {
-          url,
-          name: pathname,
-          contentType: contentType,
-        };
+        throw new Error(data.error || 'Upload failed');
       }
-      const { error } = await response.json();
-      toast.error(error);
+
+      const data = await response.json();
+      return {
+        name: data.pathname,
+        url: data.url,
+        contentType: data.contentType,
+      };
     } catch (error) {
-      toast.error('Failed to upload file, please try again!');
+      console.error('Upload error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to upload file');
+      return undefined;
     }
   };
 
   const handleFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files || []);
+      if (files.length === 0) return;
 
       setUploadQueue(files.map((file) => file.name));
 
       try {
         const uploadPromises = files.map((file) => uploadFile(file));
         const uploadedAttachments = await Promise.all(uploadPromises);
-        const successfullyUploadedAttachments = uploadedAttachments.filter(
-          (attachment) => attachment !== undefined,
+        
+        const successfulUploads = uploadedAttachments.filter((attachment): attachment is NonNullable<typeof attachment> => 
+          attachment !== undefined
         );
 
-        setAttachments((currentAttachments) => [
-          ...currentAttachments,
-          ...successfullyUploadedAttachments,
-        ]);
+        if (successfulUploads.length > 0) {
+          setAttachments((currentAttachments) => [
+            ...currentAttachments,
+            ...successfulUploads,
+          ]);
+        }
+
+        if (successfulUploads.length !== files.length) {
+          toast.error(`Failed to upload ${files.length - successfulUploads.length} files`);
+        }
       } catch (error) {
-        console.error('Error uploading files!', error);
+        console.error('Error uploading files:', error);
+        toast.error('Failed to upload files');
       } finally {
         setUploadQueue([]);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     },
     [setAttachments],

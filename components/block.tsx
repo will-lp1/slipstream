@@ -22,7 +22,7 @@ import {
   useWindowSize,
 } from 'usehooks-ts';
 
-import type { Document, Suggestion, Vote } from '@/lib/db/schema';
+import type { Document, Suggestion } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
 
 import { DiffView } from './diffview';
@@ -64,7 +64,6 @@ export function Block({
   setBlock,
   messages,
   setMessages,
-  votes,
 }: {
   chatId: string;
   input: string;
@@ -77,7 +76,6 @@ export function Block({
   setBlock: Dispatch<SetStateAction<UIBlock>>;
   messages: Array<Message>;
   setMessages: Dispatch<SetStateAction<Array<Message>>>;
-  votes: Array<Vote> | undefined;
   append: (
     message: Message | CreateMessage,
     chatRequestOptions?: ChatRequestOptions,
@@ -302,13 +300,8 @@ export function Block({
                   block={block}
                   setBlock={setBlock}
                   isLoading={isLoading && index === messages.length - 1}
-                  vote={
-                    votes
-                      ? votes.find((vote) => vote.messageId === message.id)
-                      : undefined
-                  }
                 />
-              ))}
+              ))} 
 
               <div
                 ref={messagesEndRef}
@@ -426,11 +419,8 @@ export function Block({
               ) : document ? (
                 <div className="text-sm text-muted-foreground">
                   {`Updated ${formatDistance(
-                    new Date(document.createdAt),
+                    new Date(document.created_at),
                     new Date(),
-                    {
-                      addSuffix: true,
-                    },
                   )}`}
                 </div>
               ) : (

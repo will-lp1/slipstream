@@ -35,6 +35,9 @@ import {
 import { generateTitleFromUserMessage } from '@/app/actions';
 import { deleteChat } from '@/app/(chat)/actions';
 
+import { unstable_noStore as noStore } from 'next/cache';
+
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 type AllowedTools =
@@ -84,6 +87,7 @@ interface RequestSuggestionsParams {
 }
 
 export async function POST(request: Request) {
+  noStore();
   const supabase = createServerClient();
   const { data: { session } } = await supabase.auth.getSession();
 
@@ -188,9 +192,8 @@ export async function POST(request: Request) {
             });
 
             const { fullStream } = await streamText({
-              model: customModel(model.apiIdentifier),
-              system:
-                'Write about the given topic. Markdown is supported. Use headings wherever appropriate.',
+              model: anthropic('claude-3-haiku-20240307'),
+              system: 'Write about the given topic. Markdown is supported. Use headings wherever appropriate.',
               prompt: title,
             });
 
@@ -199,7 +202,6 @@ export async function POST(request: Request) {
 
               if (type === 'text-delta') {
                 const { textDelta } = delta;
-
                 draftText += textDelta;
                 streamingData.append({
                   type: 'text-delta',
@@ -211,19 +213,27 @@ export async function POST(request: Request) {
             streamingData.append({ type: 'finish', content: '' });
 
             if (session.user?.id) {
-              await saveDocument({
-                id,
-                title,
-                content: draftText,
-                userId: session.user.id,
-              });
+              try {
+                await saveDocument({
+                  id,
+                  title,
+                  content: draftText,
+                  userId: session.user.id,
+                });
+
+                return {
+                  id,
+                  title,
+                  content: draftText,
+                  message: 'Document created successfully',
+                };
+              } catch (error) {
+                console.error('Failed to save document:', error);
+                throw error;
+              }
             }
 
-            return {
-              id,
-              title,
-              content: 'A document was created and is now visible to the user.',
-            };
+            throw new Error('User not authenticated');
           },
         },
         updateDocument: {
@@ -237,9 +247,7 @@ export async function POST(request: Request) {
             const document = await getDocumentById({ id });
 
             if (!document) {
-              return {
-                error: 'Document not found',
-              };
+              throw new Error('Document not found');
             }
 
             const { content: currentContent } = document;
@@ -251,23 +259,13 @@ export async function POST(request: Request) {
             });
 
             const { fullStream } = await streamText({
-              model: customModel(model.apiIdentifier),
-              system:
-                'You are a helpful writing assistant. Based on the description, please update the piece of writing.',
-              experimental_providerMetadata: {
-                openai: {
-                  prediction: {
-                    type: 'content',
-                    content: currentContent,
-                  },
-                },
-              },
+              model: anthropic('claude-3-haiku-20240307'),
+              system: 'You are a helpful writing assistant. Based on the description, please update the piece of writing.',
               messages: [
                 {
                   role: 'user',
-                  content: description,
+                  content: `Original text:\n${currentContent}\n\nUpdate request: ${description}`,
                 },
-                { role: 'user', content: currentContent },
               ],
             });
 
@@ -276,7 +274,6 @@ export async function POST(request: Request) {
 
               if (type === 'text-delta') {
                 const { textDelta } = delta;
-
                 draftText += textDelta;
                 streamingData.append({
                   type: 'text-delta',
@@ -288,19 +285,27 @@ export async function POST(request: Request) {
             streamingData.append({ type: 'finish', content: '' });
 
             if (session.user?.id) {
-              await saveDocument({
-                id,
-                title: document.title,
-                content: draftText,
-                userId: session.user.id,
-              });
+              try {
+                await saveDocument({
+                  id,
+                  title: document.title,
+                  content: draftText,
+                  userId: session.user.id,
+                });
+
+                return {
+                  id,
+                  title: document.title,
+                  content: draftText,
+                  message: 'Document updated successfully',
+                };
+              } catch (error) {
+                console.error('Failed to update document:', error);
+                throw error;
+              }
             }
 
-            return {
-              id,
-              title: document.title,
-              content: 'The document has been updated successfully.',
-            };
+            throw new Error('User not authenticated');
           },
         },
         requestSuggestions: {
