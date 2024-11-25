@@ -1,55 +1,29 @@
-import { compare } from 'bcrypt-ts';
-import NextAuth, { type User, type Session } from 'next-auth';
-import Credentials from 'next-auth/providers/credentials';
+import { createServerClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
 
-import { getUser } from '@/lib/db/queries';
+export type AuthSession = {
+  user: {
+    id: string;
+    email?: string;
+  } | null;
+} | null;
 
-import { authConfig } from './auth.config';
-
-interface ExtendedSession extends Session {
-  user: User;
+export async function getSession(): Promise<AuthSession> {
+  const cookieStore = cookies();
+  const supabase = createServerClient();
+  
+  const { data: { session }, error } = await supabase.auth.getSession();
+  
+  if (error || !session?.user) {
+    return null;
+  }
+  
+  return {
+    user: {
+      id: session.user.id,
+      email: session.user.email,
+    }
+  };
 }
 
-export const {
-  handlers: { GET, POST },
-  auth,
-  signIn,
-  signOut,
-} = NextAuth({
-  ...authConfig,
-  providers: [
-    Credentials({
-      credentials: {},
-      async authorize({ email, password }: any) {
-        const users = await getUser(email);
-        if (users.length === 0) return null;
-        // biome-ignore lint: Forbidden non-null assertion.
-        const passwordsMatch = await compare(password, users[0].password!);
-        if (!passwordsMatch) return null;
-        return users[0] as any;
-      },
-    }),
-  ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-      }
-
-      return token;
-    },
-    async session({
-      session,
-      token,
-    }: {
-      session: ExtendedSession;
-      token: any;
-    }) {
-      if (session.user) {
-        session.user.id = token.id as string;
-      }
-
-      return session;
-    },
-  },
-});
+export const auth = getSession; 

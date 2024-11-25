@@ -1,60 +1,63 @@
-import Form from 'next/form';
+'use client';
+
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Button } from './ui/button';
 
 export function AuthForm({
   action,
   children,
   defaultEmail = '',
 }: {
-  action: NonNullable<
-    string | ((formData: FormData) => void | Promise<void>) | undefined
-  >;
+  action: (formData: FormData) => void;
   children: React.ReactNode;
   defaultEmail?: string;
 }) {
-  return (
-    <Form action={action} className="flex flex-col gap-4 px-4 sm:px-16">
-      <div className="flex flex-col gap-2">
-        <Label
-          htmlFor="email"
-          className="text-zinc-600 font-normal dark:text-zinc-400"
-        >
-          Email Address
-        </Label>
+  const [isLoading, setIsLoading] = useState(false);
+  const supabase = createClient();
 
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
+        try {
+          const formData = new FormData(e.currentTarget);
+          await action(formData);
+        } catch (error) {
+          toast.error('An error occurred');
+        } finally {
+          setIsLoading(false);
+        }
+      }}
+      className="flex flex-col gap-4 px-4 sm:px-16"
+    >
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="email">Email Address</Label>
         <Input
           id="email"
           name="email"
-          className="bg-muted text-md md:text-sm"
           type="email"
-          placeholder="user@acme.com"
-          autoComplete="email"
-          required
-          autoFocus
+          placeholder="you@example.com"
           defaultValue={defaultEmail}
+          required
         />
       </div>
-
       <div className="flex flex-col gap-2">
-        <Label
-          htmlFor="password"
-          className="text-zinc-600 font-normal dark:text-zinc-400"
-        >
-          Password
-        </Label>
-
+        <Label htmlFor="password">Password</Label>
         <Input
           id="password"
           name="password"
-          className="bg-muted text-md md:text-sm"
           type="password"
           required
         />
       </div>
-
       {children}
-    </Form>
+    </form>
   );
 }

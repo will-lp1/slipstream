@@ -5,31 +5,29 @@ import cx from 'classnames';
 import { motion } from 'framer-motion';
 import type { Dispatch, SetStateAction } from 'react';
 
-import type { Vote } from '@/lib/db/schema';
-
 import type { UIBlock } from './block';
 import { DocumentToolCall, DocumentToolResult } from './document';
 import { SparklesIcon } from './icons';
 import { Markdown } from './markdown';
-import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
 import { Weather } from './weather';
+import { MessageActions } from './message-actions';
+
+export interface PreviewMessageProps {
+  chatId: string;
+  message: Message;
+  block: UIBlock;
+  setBlock: Dispatch<SetStateAction<UIBlock>>;
+  isLoading: boolean;
+}
 
 export const PreviewMessage = ({
   chatId,
   message,
   block,
   setBlock,
-  vote,
   isLoading,
-}: {
-  chatId: string;
-  message: Message;
-  block: UIBlock;
-  setBlock: Dispatch<SetStateAction<UIBlock>>;
-  vote: Vote | undefined;
-  isLoading: boolean;
-}) => {
+}: PreviewMessageProps) => {
   return (
     <motion.div
       className="w-full mx-auto max-w-3xl px-4 group/message"
@@ -51,7 +49,10 @@ export const PreviewMessage = ({
         <div className="flex flex-col gap-2 w-full">
           {message.content && (
             <div className="flex flex-col gap-4">
-              <Markdown>{message.content as string}</Markdown>
+              <div className="flex justify-between items-start">
+                <Markdown>{message.content as string}</Markdown>
+                <MessageActions message={message} />
+              </div>
             </div>
           )}
 
@@ -139,13 +140,7 @@ export const PreviewMessage = ({
             </div>
           )}
 
-          <MessageActions
-            key={`action-${message.id}`}
-            chatId={chatId}
-            message={message}
-            vote={vote}
-            isLoading={isLoading}
-          />
+
         </div>
       </div>
     </motion.div>

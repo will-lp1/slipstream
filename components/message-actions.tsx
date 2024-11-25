@@ -1,166 +1,58 @@
-import type { Message } from 'ai';
-import { toast } from 'sonner';
-import { useSWRConfig } from 'swr';
-import { useCopyToClipboard } from 'usehooks-ts';
+'use client';
 
-import type { Vote } from '@/lib/db/schema';
-import { getMessageIdFromAnnotations } from '@/lib/utils';
+import { Message } from 'ai';
+import { Copy } from 'lucide-react';
+import { useState } from 'react';
 
-import { CopyIcon, ThumbDownIcon, ThumbUpIcon } from './icons';
-import { Button } from './ui/button';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './ui/tooltip';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
-export function MessageActions({
-  chatId,
-  message,
-  vote,
-  isLoading,
-}: {
-  chatId: string;
+interface MessageActionsProps {
   message: Message;
-  vote: Vote | undefined;
-  isLoading: boolean;
-}) {
-  const { mutate } = useSWRConfig();
-  const [_, copyToClipboard] = useCopyToClipboard();
+}
 
-  if (isLoading) return null;
-  if (message.role === 'user') return null;
-  if (message.toolInvocations && message.toolInvocations.length > 0)
-    return null;
+export function MessageActions({ message }: MessageActionsProps) {
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = () => {
+    if (message.content) {
+      navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
-    <TooltipProvider delayDuration={0}>
-      <div className="flex flex-row gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              className="py-1 px-2 h-fit text-muted-foreground"
-              variant="outline"
-              onClick={async () => {
-                await copyToClipboard(message.content as string);
-                toast.success('Copied to clipboard!');
-              }}
-            >
-              <CopyIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Copy</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              className="py-1 px-2 h-fit text-muted-foreground !pointer-events-auto"
-              disabled={vote?.isUpvoted}
-              variant="outline"
-              onClick={async () => {
-                const messageId = getMessageIdFromAnnotations(message);
-
-                const upvote = fetch('/api/vote', {
-                  method: 'PATCH',
-                  body: JSON.stringify({
-                    chatId,
-                    messageId,
-                    type: 'up',
-                  }),
-                });
-
-                toast.promise(upvote, {
-                  loading: 'Upvoting Response...',
-                  success: () => {
-                    mutate<Array<Vote>>(
-                      `/api/vote?chatId=${chatId}`,
-                      (currentVotes) => {
-                        if (!currentVotes) return [];
-
-                        const votesWithoutCurrent = currentVotes.filter(
-                          (vote) => vote.messageId !== message.id,
-                        );
-
-                        return [
-                          ...votesWithoutCurrent,
-                          {
-                            chatId,
-                            messageId: message.id,
-                            isUpvoted: true,
-                          },
-                        ];
-                      },
-                      { revalidate: false },
-                    );
-
-                    return 'Upvoted Response!';
-                  },
-                  error: 'Failed to upvote response.',
-                });
-              }}
-            >
-              <ThumbUpIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Upvote Response</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              className="py-1 px-2 h-fit text-muted-foreground !pointer-events-auto"
-              variant="outline"
-              disabled={vote && !vote.isUpvoted}
-              onClick={async () => {
-                const messageId = getMessageIdFromAnnotations(message);
-
-                const downvote = fetch('/api/vote', {
-                  method: 'PATCH',
-                  body: JSON.stringify({
-                    chatId,
-                    messageId,
-                    type: 'down',
-                  }),
-                });
-
-                toast.promise(downvote, {
-                  loading: 'Downvoting Response...',
-                  success: () => {
-                    mutate<Array<Vote>>(
-                      `/api/vote?chatId=${chatId}`,
-                      (currentVotes) => {
-                        if (!currentVotes) return [];
-
-                        const votesWithoutCurrent = currentVotes.filter(
-                          (vote) => vote.messageId !== message.id,
-                        );
-
-                        return [
-                          ...votesWithoutCurrent,
-                          {
-                            chatId,
-                            messageId: message.id,
-                            isUpvoted: false,
-                          },
-                        ];
-                      },
-                      { revalidate: false },
-                    );
-
-                    return 'Downvoted Response!';
-                  },
-                  error: 'Failed to downvote response.',
-                });
-              }}
-            >
-              <ThumbDownIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Downvote Response</TooltipContent>
-        </Tooltip>
-      </div>
-    </TooltipProvider>
+    <DropdownMenu>
+      <DropdownMenuTrigger className="opacity-0 group-hover/message:opacity-100 transition">
+        <div className="rounded-md p-2 hover:bg-accent">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="1" />
+            <circle cx="19" cy="12" r="1" />
+            <circle cx="5" cy="12" r="1" />
+          </svg>
+        </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={onCopy}>
+          <Copy className="mr-2 h-4 w-4" />
+          {copied ? 'Copied!' : 'Copy message'}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
-}
+} 

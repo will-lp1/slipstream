@@ -2,41 +2,37 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useActionState, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { AuthForm } from '@/components/auth-form';
 import { SubmitButton } from '@/components/submit-button';
-
-import { login, type LoginActionState } from '../actions';
+import { createClient } from '@/lib/supabase/client';
 
 export default function Page() {
   const router = useRouter();
-
   const [email, setEmail] = useState('');
   const [isSuccessful, setIsSuccessful] = useState(false);
+  const supabase = createClient();
 
-  const [state, formAction] = useActionState<LoginActionState, FormData>(
-    login,
-    {
-      status: 'idle',
-    },
-  );
+  const handleSubmit = async (formData: FormData) => {
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+    setEmail(email);
 
-  useEffect(() => {
-    if (state.status === 'failed') {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
       toast.error('Invalid credentials!');
-    } else if (state.status === 'invalid_data') {
-      toast.error('Failed validating your submission!');
-    } else if (state.status === 'success') {
-      setIsSuccessful(true);
-      router.refresh();
+      return;
     }
-  }, [state.status, router]);
 
-  const handleSubmit = (formData: FormData) => {
-    setEmail(formData.get('email') as string);
-    formAction(formData);
+    setIsSuccessful(true);
+    router.refresh();
+    router.push('/');
   };
 
   return (

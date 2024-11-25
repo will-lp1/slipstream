@@ -1,50 +1,7 @@
 'server-only';
 
-import { genSaltSync, hashSync } from 'bcrypt-ts';
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-
-import {
-  user,
-  chat,
-  type User,
-  document,
-  type Suggestion,
-  suggestion,
-  type Message,
-  message,
-  vote,
-} from './schema';
-
-// Optionally, if not using email/pass login, you can
-// use the Drizzle adapter for Auth.js / NextAuth
-// https://authjs.dev/reference/adapter/drizzle
-
-// biome-ignore lint: Forbidden non-null assertion.
-const client = postgres(process.env.POSTGRES_URL!);
-const db = drizzle(client);
-
-export async function getUser(email: string): Promise<Array<User>> {
-  try {
-    return await db.select().from(user).where(eq(user.email, email));
-  } catch (error) {
-    console.error('Failed to get user from database');
-    throw error;
-  }
-}
-
-export async function createUser(email: string, password: string) {
-  const salt = genSaltSync(10);
-  const hash = hashSync(password, salt);
-
-  try {
-    return await db.insert(user).values({ email, password: hash });
-  } catch (error) {
-    console.error('Failed to create user in database');
-    throw error;
-  }
-}
+import { createServerClient } from '@/lib/supabase/server';
+import type { Chat, Document, Message, Embedding, Suggestion } from '@/lib/db/schema';
 
 export async function saveChat({
   id,
@@ -56,167 +13,168 @@ export async function saveChat({
   title: string;
 }) {
   try {
-    return await db.insert(chat).values({
-      id,
-      createdAt: new Date(),
-      userId,
-      title,
-    });
+    const supabase = createServerClient();
+    const { error } = await supabase
+      .from('chat')
+      .insert({ id, user_id: userId, title, created_at: new Date().toISOString() });
+
+    if (error) throw error;
   } catch (error) {
     console.error('Failed to save chat in database');
     throw error;
   }
 }
 
-export async function deleteChatById({ id }: { id: string }) {
-  try {
-    await db.delete(vote).where(eq(vote.chatId, id));
-    await db.delete(message).where(eq(message.chatId, id));
-
-    return await db.delete(chat).where(eq(chat.id, id));
-  } catch (error) {
-    console.error('Failed to delete chat by id from database');
-    throw error;
-  }
-}
-
 export async function getChatsByUserId({ id }: { id: string }) {
   try {
-    return await db
-      .select()
-      .from(chat)
-      .where(eq(chat.userId, id))
-      .orderBy(desc(chat.createdAt));
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+      .from('chat')
+      .select('*')
+      .eq('user_id', id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data;
   } catch (error) {
-    console.error('Failed to get chats by user from database');
+    console.error('Failed to get chats from database');
     throw error;
   }
 }
 
-export async function getChatById({ id }: { id: string }) {
-  try {
-    const [selectedChat] = await db.select().from(chat).where(eq(chat.id, id));
-    return selectedChat;
-  } catch (error) {
-    console.error('Failed to get chat by id from database');
-    throw error;
-  }
-}
-
-export async function saveMessages({ messages }: { messages: Array<Message> }) {
-  try {
-    return await db.insert(message).values(messages);
-  } catch (error) {
-    console.error('Failed to save messages in database', error);
-    throw error;
-  }
-}
-
-export async function getMessagesByChatId({ id }: { id: string }) {
-  try {
-    return await db
-      .select()
-      .from(message)
-      .where(eq(message.chatId, id))
-      .orderBy(asc(message.createdAt));
-  } catch (error) {
-    console.error('Failed to get messages by chat id from database', error);
-    throw error;
-  }
-}
-
-export async function voteMessage({
+export async function saveMessage({
+  content,
+  role,
   chatId,
-  messageId,
-  type,
 }: {
+  content: string;
+  role: string;
   chatId: string;
-  messageId: string;
-  type: 'up' | 'down';
 }) {
   try {
-    const [existingVote] = await db
-      .select()
-      .from(vote)
-      .where(and(eq(vote.messageId, messageId)));
+    const supabase = createServerClient();
+    const { error } = await supabase
+      .from('message')
+      .insert({ content, role, chat_id: chatId });
 
-    if (existingVote) {
-      return await db
-        .update(vote)
-        .set({ isUpvoted: type === 'up' })
-        .where(and(eq(vote.messageId, messageId), eq(vote.chatId, chatId)));
-    }
-    return await db.insert(vote).values({
-      chatId,
-      messageId,
-      isUpvoted: type === 'up',
-    });
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to upvote message in database', error);
+    console.error('Failed to save message in database');
     throw error;
   }
 }
 
-export async function getVotesByChatId({ id }: { id: string }) {
+export async function getMessagesByChatId(chatId: string) {
   try {
-    return await db.select().from(vote).where(eq(vote.chatId, id));
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+      .from('message')
+      .select('*')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return data;
   } catch (error) {
-    console.error('Failed to get votes by chat id from database', error);
+    console.error('Failed to get messages from database');
+    throw error;
+  }
+}
+
+export async function saveEmbedding({
+  content,
+  embedding,
+  documentId,
+}: {
+  content: string;
+  embedding: number[];
+  documentId: string;
+}) {
+  try {
+    const supabase = createServerClient();
+    const { error } = await supabase
+      .from('embeddings')
+      .insert({ content, embedding, document_id: documentId });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Failed to save embedding in database');
+    throw error;
+  }
+}
+
+export async function searchEmbeddings({
+  embedding,
+  threshold = 0.7,
+  limit = 5,
+}: {
+  embedding: number[];
+  threshold?: number;
+  limit?: number;
+}) {
+  try {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+      .rpc('match_embeddings', {
+        query_embedding: embedding,
+        match_threshold: threshold,
+        match_count: limit,
+      });
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Failed to search embeddings');
     throw error;
   }
 }
 
 export async function saveDocument({
   id,
-  title,
   content,
   userId,
+  title,
 }: {
   id: string;
-  title: string;
   content: string;
   userId: string;
+  title: string;
 }) {
   try {
-    return await db.insert(document).values({
-      id,
-      title,
-      content,
-      userId,
-      createdAt: new Date(),
-    });
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+      .from('documents')
+      .insert({ 
+        id, 
+        content, 
+        user_id: userId,
+        title,
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   } catch (error) {
     console.error('Failed to save document in database');
     throw error;
   }
 }
 
-export async function getDocumentsById({ id }: { id: string }) {
-  try {
-    const documents = await db
-      .select()
-      .from(document)
-      .where(eq(document.id, id))
-      .orderBy(asc(document.createdAt));
-
-    return documents;
-  } catch (error) {
-    console.error('Failed to get document by id from database');
-    throw error;
-  }
-}
-
 export async function getDocumentById({ id }: { id: string }) {
   try {
-    const [selectedDocument] = await db
-      .select()
-      .from(document)
-      .where(eq(document.id, id))
-      .orderBy(desc(document.createdAt));
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    return selectedDocument;
+    if (error) throw error;
+    return data;
   } catch (error) {
-    console.error('Failed to get document by id from database');
+    console.error('Failed to get document from database');
     throw error;
   }
 }
@@ -229,53 +187,149 @@ export async function deleteDocumentsByIdAfterTimestamp({
   timestamp: Date;
 }) {
   try {
-    await db
-      .delete(suggestion)
-      .where(
-        and(
-          eq(suggestion.documentId, id),
-          gt(suggestion.documentCreatedAt, timestamp),
-        ),
-      );
+    const supabase = createServerClient();
+    const { error } = await supabase
+      .from('documents')
+      .delete()
+      .eq('id', id)
+      .gt('created_at', timestamp.toISOString());
 
-    return await db
-      .delete(document)
-      .where(and(eq(document.id, id), gt(document.createdAt, timestamp)));
+    if (error) throw error;
   } catch (error) {
-    console.error(
-      'Failed to delete documents by id after timestamp from database',
-    );
+    console.error('Failed to delete documents from database');
     throw error;
   }
 }
 
-export async function saveSuggestions({
-  suggestions,
+export async function saveDocumentWithEmbeddings({
+  id,
+  content,
+  title,
+  userId,
 }: {
-  suggestions: Array<Suggestion>;
+  id: string;
+  content: string;
+  title: string;
+  userId: string;
 }) {
   try {
-    return await db.insert(suggestion).values(suggestions);
+    const supabase = createServerClient();
+    
+    // First save the document
+    const { data: document, error: docError } = await supabase
+      .from('documents')
+      .insert({ 
+        id,
+        content, 
+        title,
+        user_id: userId,
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (docError) throw docError;
+
+    // Generate and save embeddings
+    const embeddings = await generateEmbeddings(content);
+    
+    const { error: embeddingError } = await supabase
+      .from('embeddings')
+      .insert(
+        embeddings.map(({ content, embedding }) => ({
+          content,
+          embedding,
+          document_id: document.id,
+        }))
+      );
+
+    if (embeddingError) throw embeddingError;
+
+    return document;
+  } catch (error) {
+    console.error('Failed to save document with embeddings:', error);
+    throw error;
+  }
+}
+
+export async function deleteChatById({ id }: { id: string }) {
+  try {
+    const supabase = createServerClient();
+    const { error } = await supabase
+      .from('chat')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Failed to delete chat from database');
+    throw error;
+  }
+}
+
+export async function getChatById({ id }: { id: string }) {
+  try {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+      .from('chat')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null; // Chat not found
+      }
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Failed to get chat from database');
+    throw error;
+  }
+}
+
+export async function saveMessages({ messages }: { messages: Array<Partial<Message>> }) {
+  try {
+    const supabase = createServerClient();
+    const { error } = await supabase
+      .from('message')
+      .insert(messages.map(msg => ({
+        ...msg,
+        created_at: msg.created_at || new Date().toISOString()
+      })));
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Failed to save messages in database');
+    throw error;
+  }
+}
+
+export async function saveSuggestions({ suggestions }: { suggestions: Array<Suggestion> }) {
+  try {
+    const supabase = createServerClient();
+    const { error } = await supabase
+      .from('suggestions')
+      .insert(suggestions.map(suggestion => ({
+        ...suggestion,
+        created_at: suggestion.createdAt.toISOString(),
+        document_created_at: suggestion.documentCreatedAt.toISOString()
+      })));
+
+    if (error) throw error;
   } catch (error) {
     console.error('Failed to save suggestions in database');
     throw error;
   }
 }
 
-export async function getSuggestionsByDocumentId({
-  documentId,
-}: {
-  documentId: string;
-}) {
-  try {
-    return await db
-      .select()
-      .from(suggestion)
-      .where(and(eq(suggestion.documentId, documentId)));
-  } catch (error) {
-    console.error(
-      'Failed to get suggestions by document version from database',
-    );
-    throw error;
-  }
+async function generateEmbeddings(content: string) {
+  // This is a placeholder - you'll need to implement your own embedding generation
+  // using a service like OpenAI's embedding API
+  return [{
+    content: content,
+    embedding: [] // Replace with actual embedding vector
+  }];
 }

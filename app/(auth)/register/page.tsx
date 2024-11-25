@@ -2,44 +2,45 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useActionState, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { AuthForm } from '@/components/auth-form';
 import { SubmitButton } from '@/components/submit-button';
-
-import { register, type RegisterActionState } from '../actions';
+import { createClient } from '@/lib/supabase/client';
 
 export default function Page() {
   const router = useRouter();
-
   const [email, setEmail] = useState('');
   const [isSuccessful, setIsSuccessful] = useState(false);
+  const supabase = createClient();
 
-  const [state, formAction] = useActionState<RegisterActionState, FormData>(
-    register,
-    {
-      status: 'idle',
-    },
-  );
+  const handleSubmit = async (formData: FormData) => {
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+    setEmail(email);
 
-  useEffect(() => {
-    if (state.status === 'user_exists') {
-      toast.error('Account already exists');
-    } else if (state.status === 'failed') {
-      toast.error('Failed to create account');
-    } else if (state.status === 'invalid_data') {
-      toast.error('Failed validating your submission!');
-    } else if (state.status === 'success') {
-      toast.success('Account created successfully');
-      setIsSuccessful(true);
-      router.refresh();
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${location.origin}/auth/callback`,
+      },
+    });
+
+    if (error) {
+      if (error.message.includes('already exists')) {
+        toast.error('Account already exists');
+      } else {
+        toast.error('Failed to create account');
+      }
+      return;
     }
-  }, [state, router]);
 
-  const handleSubmit = (formData: FormData) => {
-    setEmail(formData.get('email') as string);
-    formAction(formData);
+    toast.success('Account created successfully');
+    setIsSuccessful(true);
+    router.refresh();
+    router.push('/');
   };
 
   return (

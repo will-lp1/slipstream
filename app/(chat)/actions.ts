@@ -1,29 +1,83 @@
 'use server';
 
-import { type CoreUserMessage, generateText } from 'ai';
-import { cookies } from 'next/headers';
+import { type Message } from 'ai';
+import { createServerClient } from '@/lib/supabase/server';
+import { generateUUID } from '@/lib/utils';
+import { 
+  deleteChatById, 
+  getChatById, 
+  getDocumentById, 
+  saveChat, 
+  saveDocument, 
+  saveMessages, 
+  saveSuggestions 
+} from '@/lib/db/queries';
+import { revalidatePath } from 'next/cache';
 
-import { customModel } from '@/lib/ai';
+export async function deleteChat(id: string) {
+  const supabase = createServerClient();
+  const { data: { session } } = await supabase.auth.getSession();
 
-export async function saveModelId(model: string) {
-  const cookieStore = await cookies();
-  cookieStore.set('model-id', model);
+  if (!session?.user) {
+    throw new Error('Unauthorized');
+  }
+
+  const chat = await getChatById({ id });
+
+  if (chat.userId !== session.user.id) {
+    throw new Error('Unauthorized');
+  }
+
+  await deleteChatById({ id });
 }
 
-export async function generateTitleFromUserMessage({
-  message,
+export async function saveChatAndMessages({
+  id,
+  title,
+  messages,
+  userId,
 }: {
-  message: CoreUserMessage;
+  id: string;
+  title: string;
+  messages: Message[];
+  userId: string;
 }) {
-  const { text: title } = await generateText({
-    model: customModel('gpt-4o-mini'),
-    system: `\n
-    - you will generate a short title based on the first message a user begins a conversation with
-    - ensure it is not more than 80 characters long
-    - the title should be a summary of the user's message
-    - do not use quotes or colons`,
-    prompt: JSON.stringify(message),
+  await saveChat({ id, userId, title });
+  
+  await saveMessages({
+    messages: messages.map(message => ({
+      id: generateUUID(),
+      chat_id: id,
+      role: message.role,
+      content: typeof message.content === 'string' 
+        ? message.content 
+        : JSON.stringify(message.content),
+      created_at: new Date().toISOString(),
+    })),
   });
-
-  return title;
 }
+
+export async function saveModelId(modelId: string) {
+  const supabase = createServerClient();
+  
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
+    return { error: 'Not authenticated' };
+  }
+
+  const { error } = await supabase
+    .from('user_settings')
+    .upsert({
+      user_id: session.user.id,
+      model_id: modelId,
+    }, {
+      onConflict: 'user_id'
+    });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath('/');
+  return { success: true };
+} 

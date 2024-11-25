@@ -1,11 +1,18 @@
-import { auth } from '@/app/(auth)/auth';
+import { createServerClient } from '@/lib/supabase/server';
 import {
   deleteDocumentsByIdAfterTimestamp,
-  getDocumentsById,
+  getDocumentById,
   saveDocument,
 } from '@/lib/db/queries';
 
 export async function GET(request: Request) {
+  const supabase = createServerClient();
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
@@ -13,39 +20,32 @@ export async function GET(request: Request) {
     return new Response('Missing id', { status: 400 });
   }
 
-  const session = await auth();
-
-  if (!session || !session.user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
-  const documents = await getDocumentsById({ id });
-
-  const [document] = documents;
+  const document = await getDocumentById({ id });
 
   if (!document) {
     return new Response('Not Found', { status: 404 });
   }
 
-  if (document.userId !== session.user.id) {
+  if (document.user_id !== session.user.id) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  return Response.json(documents, { status: 200 });
+  return Response.json([document], { status: 200 });
 }
 
 export async function POST(request: Request) {
+  const supabase = createServerClient();
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
   if (!id) {
     return new Response('Missing id', { status: 400 });
-  }
-
-  const session = await auth();
-
-  if (!session) {
-    return new Response('Unauthorized', { status: 401 });
   }
 
   const { content, title }: { content: string; title: string } =
@@ -65,6 +65,13 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const supabase = createServerClient();
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
@@ -74,13 +81,7 @@ export async function PATCH(request: Request) {
     return new Response('Missing id', { status: 400 });
   }
 
-  const session = await auth();
-
-  if (!session || !session.user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
-  const documents = await getDocumentsById({ id });
+  const documents = await getDocumentById({ id });
 
   const [document] = documents;
 

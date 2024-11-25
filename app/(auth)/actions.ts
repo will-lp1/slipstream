@@ -1,84 +1,37 @@
 'use server';
 
-import { z } from 'zod';
+import { createServerClient } from '../../lib/supabase/server';
+import { redirect } from 'next/navigation';
 
-import { createUser, getUser } from '@/lib/db/queries';
+export async function login(formData: FormData) {
+  const supabase = createServerClient();
+  
+  const { error } = await supabase.auth.signInWithPassword({
+    email: formData.get('email') as string,
+    password: formData.get('password') as string,
+  });
 
-import { signIn } from './auth';
+  if (error) {
+    return { error: error.message };
+  }
 
-const authFormSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-});
-
-export interface LoginActionState {
-  status: 'idle' | 'in_progress' | 'success' | 'failed' | 'invalid_data';
+  redirect('/');
 }
 
-export const login = async (
-  _: LoginActionState,
-  formData: FormData,
-): Promise<LoginActionState> => {
-  try {
-    const validatedData = authFormSchema.parse({
-      email: formData.get('email'),
-      password: formData.get('password'),
-    });
+export async function register(formData: FormData) {
+  const supabase = createServerClient();
+  
+  const { error } = await supabase.auth.signUp({
+    email: formData.get('email') as string,
+    password: formData.get('password') as string,
+    options: {
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+    },
+  });
 
-    await signIn('credentials', {
-      email: validatedData.email,
-      password: validatedData.password,
-      redirect: false,
-    });
-
-    return { status: 'success' };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return { status: 'invalid_data' };
-    }
-
-    return { status: 'failed' };
+  if (error) {
+    return { error: error.message };
   }
-};
 
-export interface RegisterActionState {
-  status:
-    | 'idle'
-    | 'in_progress'
-    | 'success'
-    | 'failed'
-    | 'user_exists'
-    | 'invalid_data';
+  redirect('/');
 }
-
-export const register = async (
-  _: RegisterActionState,
-  formData: FormData,
-): Promise<RegisterActionState> => {
-  try {
-    const validatedData = authFormSchema.parse({
-      email: formData.get('email'),
-      password: formData.get('password'),
-    });
-
-    const [user] = await getUser(validatedData.email);
-
-    if (user) {
-      return { status: 'user_exists' } as RegisterActionState;
-    }
-    await createUser(validatedData.email, validatedData.password);
-    await signIn('credentials', {
-      email: validatedData.email,
-      password: validatedData.password,
-      redirect: false,
-    });
-
-    return { status: 'success' };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return { status: 'invalid_data' };
-    }
-
-    return { status: 'failed' };
-  }
-};

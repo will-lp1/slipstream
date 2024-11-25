@@ -10,7 +10,6 @@ import { useWindowSize } from 'usehooks-ts';
 import { ChatHeader } from '@/components/chat-header';
 import { PreviewMessage, ThinkingMessage } from '@/components/message';
 import { useScrollToBottom } from '@/components/use-scroll-to-bottom';
-import type { Vote } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
 
 import { Block, type UIBlock } from './block';
@@ -64,11 +63,6 @@ export function Chat({
     },
   });
 
-  const { data: votes } = useSWR<Array<Vote>>(
-    `/api/vote?chatId=${id}`,
-    fetcher,
-  );
-
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
 
@@ -92,11 +86,6 @@ export function Chat({
               block={block}
               setBlock={setBlock}
               isLoading={isLoading && messages.length - 1 === index}
-              vote={
-                votes
-                  ? votes.find((vote) => vote.messageId === message.id)
-                  : undefined
-              }
             />
           ))}
 
@@ -144,7 +133,6 @@ export function Chat({
             setBlock={setBlock}
             messages={messages}
             setMessages={setMessages}
-            votes={votes}
           />
         )}
       </AnimatePresence>
