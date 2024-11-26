@@ -6,10 +6,14 @@ import { redirect } from 'next/navigation';
 import { createServerClient } from '@/lib/supabase/server';
 import { customModel } from '@/lib/ai';
 import { anthropic } from '@ai-sdk/anthropic';
+import { revalidatePath } from 'next/cache';
 
 export async function saveModelId(model: string) {
   const cookieStore = await cookies();
   cookieStore.set('model-id', model);
+  
+  revalidatePath('/');
+  return { success: true };
 }
 
 export async function generateTitleFromUserMessage({

@@ -12,12 +12,17 @@ export default async function Layout({
 }: {
   children: React.ReactNode;
 }) {
-  const [session, cookieStore] = await Promise.all([auth(), cookies()]);
+  const cookieStore = await cookies();
   const isCollapsed = cookieStore.get('sidebar:state')?.value !== 'true';
+  const session = await auth();
+
+  if (!session?.user) {
+    return null;
+  }
 
   return (
     <SidebarProvider defaultOpen={!isCollapsed}>
-      <AppSidebar user={session?.user} />
+      <AppSidebar user={session.user} />
       <SidebarInset>{children}</SidebarInset>
     </SidebarProvider>
   );

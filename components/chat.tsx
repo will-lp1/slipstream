@@ -39,10 +39,20 @@ export function Chat({
     stop,
     data: streamingData,
   } = useChat({
-    body: { id, modelId: selectedModelId },
+    api: selectedModelId === 'claude-haiku-search' 
+      ? '/api/search'  // Use search endpoint for web search model
+      : '/api/chat',   // Use chat endpoint for regular model
+    id,
     initialMessages,
-    onFinish: () => {
-      mutate('/api/history');
+    body: {
+      id,
+      modelId: selectedModelId,
+    },
+    onResponse(response) {
+      // ... existing response handling ...
+    },
+    onFinish() {
+      // ... existing finish handling ...
     },
   });
 
