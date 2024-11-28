@@ -172,7 +172,9 @@ ${processedResults.map((result, index) =>
       messages: [
         {
           role: 'user',
-          content: userMessage.content,
+          content: typeof userMessage.content === 'string' 
+            ? userMessage.content 
+            : JSON.stringify(userMessage.content),
         }
       ],
       onFinish: () => {
