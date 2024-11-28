@@ -55,8 +55,14 @@ const KeyPoint = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-// Update the citation handling to open sources directly
-const processContentWithCitations = (content: string, sources: Array<{url: string}>) => {
+// Update the type to be more specific
+interface Source {
+  title: string;
+  url: string;
+}
+
+// Update the function signature to be more specific
+const processContentWithCitations = (content: string, sources: Source[]) => {
   return content.replace(
     /\[(\d+)\]/g, 
     (match, num) => {
@@ -130,6 +136,19 @@ export const PreviewMessage = ({
     (window as any).scrollToSource = scrollToSource;
   }
 
+  const { mainContent, hasSources, sources } = splitContent(
+    typeof message.content === 'string' ? message.content : ''
+  );
+
+  // Filter out null values and ensure all items have url property
+  const sourcesList = sources
+    .split('\n')
+    .map(line => {
+      const match = line.match(/\d+\.\s+\[(.*?)\]\((.*?)\)/);
+      return match ? { title: match[1], url: match[2] } : null;
+    })
+    .filter((source): source is Source => source !== null);
+
   return (
     <motion.div
       className="w-full mx-auto max-w-3xl px-4 group/message"
@@ -157,12 +176,6 @@ export const PreviewMessage = ({
                 {typeof message.content === 'string' && (
                   <div className="w-full">
                     {(() => {
-                      const { mainContent, hasSources, sources } = splitContent(message.content);
-                      const sourcesList = sources.split('\n').map(source => {
-                        const match = source.match(/\d+\. \[(.*?)\]\((.*?)\)/);
-                        return match ? { title: match[1], url: match[2] } : null;
-                      }).filter(Boolean);
-
                       return (
                         <>
                           <div 
