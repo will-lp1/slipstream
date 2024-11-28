@@ -49,6 +49,39 @@ import {
     }[];
   };
   
+  async function fetchSearchResults(query: string): Promise<SearchResponse | null> {
+    // Try POST request first
+    try {
+      const postResponse = await fetch('http://144.126.230.47/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query }),
+      });
+
+      if (postResponse.ok) {
+        return await postResponse.json();
+      }
+
+      console.log('POST request failed, trying GET request...');
+      
+      // If POST fails, try GET request
+      const getResponse = await fetch(`http://144.126.230.47/search?query=${encodeURIComponent(query)}`);
+      
+      if (getResponse.ok) {
+        return await getResponse.json();
+      }
+      
+      console.error('Both POST and GET requests failed');
+      return null;
+      
+    } catch (error) {
+      console.error('Search API error:', error);
+      return null;
+    }
+  }
+  
   export async function POST(request: Request) {
     noStore();
     const cookieStore = cookies();
@@ -98,57 +131,34 @@ import {
       const streamingData = new StreamData();
   
       try {
-        // Query the search API and generate response
-        const searchResponse = await fetch('http://localhost:8000/api/search', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            query: typeof userMessage.content === 'string' 
-              ? userMessage.content 
-              : JSON.stringify(userMessage.content),
-          }),
-        });
-  
-        if (!searchResponse.ok) {
-          // Instead of throwing, handle the error gracefully
-          const errorData = await searchResponse.text();
-          console.error('Search API error:', errorData);
-          
-          // Fall back to regular chat without search results
-          const result = await streamText({
-            model: anthropic('claude-3-haiku-20240307'),
-            messages: [
-              {
-                role: 'user',
-                content: userMessage.content,
-              }
-            ],
-            onFinish: async ({ responseMessages }) => {
-              if (session.user?.id) {
-                await saveMessages({
-                  messages: responseMessages.map(message => ({
-                    chat_id: json.id,
-                    role: message.role,
-                    content: typeof message.content === 'string' 
-                      ? message.content 
-                      : JSON.stringify(message.content),
-                    created_at: new Date().toISOString(),
-                  })),
-                });
-              }
-              streamingData.close();
-            }
-          });
-  
-          return result.toDataStreamResponse({
-            data: streamingData,
+        const query = typeof userMessage.content === 'string' 
+          ? userMessage.content 
+          : JSON.stringify(userMessage.content);
+
+        const searchResults = await fetchSearchResults(query);
+
+        if (!searchResults) {
+          console.log('No search results, falling back to regular chat');
+          return handleFallbackChat({
+            userMessage,
+            json,
+            session,
+            streamingData
           });
         }
-  
-        const results = await searchResponse.json() as SearchResponse;
-        const processedResults = results.results.map(result => ({
+
+        // Validate the response structure
+        if (!Array.isArray(searchResults.results)) {
+          console.error('Invalid search results format:', searchResults);
+          return handleFallbackChat({
+            userMessage,
+            json,
+            session,
+            streamingData
+          });
+        }
+
+        const processedResults = searchResults.results.map(result => ({
           title: result.title,
           url: result.url,
           snippet: result.snippet,
@@ -175,9 +185,21 @@ Search Query: "${typeof userMessage.content === 'string'
 Sources:
 ${formattedSources}
 
-Please provide a clear and accurate response using the above sources. Include relevant source citations using [1], [2], etc.
+Please structure your response in this format:
 
-End your response with a "Sources:" section that lists all references with their URLs in markdown format.`,
+1. Start with a clear, direct answer to the query
+2. Provide supporting details in 2-3 concise paragraphs
+3. Use source citations [1], [2] etc. at the end of relevant sentences
+4. Keep paragraphs short and focused
+
+End your response with:
+
+---
+
+Sources:
+${processedResults.map((result, index) => 
+  `${index + 1}. [${result.title}](${result.url})`
+).join('\n')}`,
             }
           ],
           onFinish: async ({ responseMessages }) => {
@@ -274,5 +296,46 @@ End your response with a "Sources:" section that lists all references with their
         status: 500,
       });
     }
+  }
+  
+  async function handleFallbackChat({
+    userMessage,
+    json,
+    session,
+    streamingData
+  }: {
+    userMessage: CoreMessage,
+    json: any,
+    session: any,
+    streamingData: StreamData
+  }) {
+    const result = await streamText({
+      model: anthropic('claude-3-haiku-20240307'),
+      messages: [
+        {
+          role: 'user',
+          content: userMessage.content,
+        }
+      ],
+      onFinish: async ({ responseMessages }) => {
+        if (session.user?.id) {
+          await saveMessages({
+            messages: responseMessages.map(message => ({
+              chat_id: json.id,
+              role: message.role,
+              content: typeof message.content === 'string' 
+                ? message.content 
+                : JSON.stringify(message.content),
+              created_at: new Date().toISOString(),
+            })),
+          });
+        }
+        streamingData.close();
+      }
+    });
+
+    return result.toDataStreamResponse({
+      data: streamingData,
+    });
   }
   

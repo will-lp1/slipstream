@@ -12,6 +12,9 @@ import { Markdown } from './markdown';
 import { PreviewAttachment } from './preview-attachment';
 import { Weather } from './weather';
 import { MessageActions } from './message-actions';
+import { Button } from './ui/button';
+import { Card } from './ui/card';
+import { ExternalLink } from 'lucide-react';
 
 export interface PreviewMessageProps {
   chatId: string;
@@ -21,6 +24,91 @@ export interface PreviewMessageProps {
   isLoading: boolean;
 }
 
+interface SourceCardProps {
+  title: string;
+  url: string;
+  snippet: string;
+  index: number;
+}
+
+// Add a new type for linked citations
+interface LinkedCitation {
+  index: number;
+  url: string;
+}
+
+// Add scroll helper function
+const scrollToSource = (index: number) => {
+  const sourceElement = document.getElementById(`source-${index}`);
+  if (sourceElement) {
+    sourceElement.scrollIntoView({ behavior: 'smooth' });
+    // Add a brief highlight effect
+    sourceElement.classList.add('highlight-source');
+    setTimeout(() => sourceElement.classList.remove('highlight-source'), 2000);
+  }
+};
+
+const KeyPoint = ({ children }: { children: React.ReactNode }) => (
+  <div className="flex items-start gap-2 mb-2">
+    <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2" />
+    <div className="flex-1">{children}</div>
+  </div>
+);
+
+// Update the citation handling to open sources directly
+const processContentWithCitations = (content: string, sources: Array<{url: string}>) => {
+  return content.replace(
+    /\[(\d+)\]/g, 
+    (match, num) => {
+      const index = parseInt(num) - 1;
+      const url = sources[index]?.url;
+      return `<button 
+        class="inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors font-medium" 
+        onclick="window.open('${url}', '_blank')"
+      >[${num}]</button>`;
+    }
+  );
+};
+
+// Even cleaner SourceCard with no shadows
+const SourceCard = ({ title, url, snippet, index }: SourceCardProps) => (
+  <Card 
+    id={`source-${index}`}
+    className="p-2.5 transition-colors bg-background border-border/40 hover:border-border group"
+  >
+    <div className="flex items-start gap-2.5">
+      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-secondary text-muted-foreground text-xs font-medium shrink-0 mt-0.5">
+        {index + 1}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start gap-2">
+          <a 
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 group"
+          >
+            <h3 className="font-medium text-sm line-clamp-1 group-hover:text-foreground/80 transition-colors">
+              {title}
+            </h3>
+            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+              {snippet}
+            </p>
+          </a>
+          <Button 
+            variant="ghost" 
+            size="icon"
+            className="h-5 w-5 text-muted-foreground hover:text-foreground -mt-0.5"
+            onClick={() => window.open(url, '_blank')}
+          >
+            <ExternalLink size={12} />
+          </Button>
+        </div>
+      </div>
+    </div>
+  </Card>
+);
+
 export const PreviewMessage = ({
   chatId,
   message,
@@ -28,6 +116,20 @@ export const PreviewMessage = ({
   setBlock,
   isLoading,
 }: PreviewMessageProps) => {
+  const splitContent = (content: string) => {
+    const parts = content.split('---\n\nSources:');
+    return {
+      mainContent: parts[0].trim(),
+      hasSources: parts.length > 1,
+      sources: parts[1]?.trim() || ''
+    };
+  };
+
+  // Add scrollToSource to window object
+  if (typeof window !== 'undefined') {
+    (window as any).scrollToSource = scrollToSource;
+  }
+
   return (
     <motion.div
       className="w-full mx-auto max-w-3xl px-4 group/message"
@@ -35,11 +137,13 @@ export const PreviewMessage = ({
       animate={{ y: 0, opacity: 1 }}
       data-role={message.role}
     >
-      <div
-        className={cx(
-          'group-data-[role=user]/message:bg-primary group-data-[role=user]/message:text-primary-foreground flex gap-4 group-data-[role=user]/message:px-3 w-full group-data-[role=user]/message:w-fit group-data-[role=user]/message:ml-auto group-data-[role=user]/message:max-w-2xl group-data-[role=user]/message:py-2 rounded-xl',
-        )}
-      >
+      <div className={cx(
+        'flex gap-4 w-full rounded-xl',
+        'group-data-[role=user]/message:bg-white group-data-[role=user]/message:text-foreground',
+        'group-data-[role=user]/message:px-3 group-data-[role=user]/message:py-2',
+        'group-data-[role=user]/message:w-fit group-data-[role=user]/message:ml-auto',
+        'group-data-[role=user]/message:max-w-2xl group-data-[role=user]/message:border',
+      )}>
         {message.role === 'assistant' && (
           <div className="size-8 flex items-center rounded-full justify-center ring-1 shrink-0 ring-border">
             <SparklesIcon size={14} />
@@ -50,7 +154,59 @@ export const PreviewMessage = ({
           {message.content && (
             <div className="flex flex-col gap-4">
               <div className="flex justify-between items-start">
-                <Markdown>{message.content as string}</Markdown>
+                {typeof message.content === 'string' && (
+                  <div className="w-full">
+                    {(() => {
+                      const { mainContent, hasSources, sources } = splitContent(message.content);
+                      const sourcesList = sources.split('\n').map(source => {
+                        const match = source.match(/\d+\. \[(.*?)\]\((.*?)\)/);
+                        return match ? { title: match[1], url: match[2] } : null;
+                      }).filter(Boolean);
+
+                      return (
+                        <>
+                          <div 
+                            className="prose dark:prose-invert max-w-none"
+                            dangerouslySetInnerHTML={{ 
+                              __html: processContentWithCitations(mainContent, sourcesList) 
+                            }}
+                          />
+                          {hasSources && (
+                            <div className="mt-4 scroll-mt-6">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="h-px flex-1 bg-border/50" />
+                                <h3 className="text-xs font-medium text-muted-foreground/60 px-2">Sources</h3>
+                                <div className="h-px flex-1 bg-border/50" />
+                              </div>
+                              <div className="grid sm:grid-cols-2 gap-1.5">
+                                {sources.split('\n').map((source, index) => {
+                                  const match = source.match(/\d+\. \[(.*?)\]\((.*?)\)/);
+                                  if (match) {
+                                    const [_, title, url] = match;
+                                    const snippetMatch = mainContent.match(
+                                      new RegExp(`\\[${index + 1}\\] "(.*?)" \\(Source:`)
+                                    );
+                                    const snippet = snippetMatch ? snippetMatch[1] : '';
+                                    return (
+                                      <SourceCard
+                                        key={index}
+                                        index={index}
+                                        title={title}
+                                        url={url}
+                                        snippet={snippet}
+                                      />
+                                    );
+                                  }
+                                  return null;
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
                 <MessageActions message={message} />
               </div>
             </div>
