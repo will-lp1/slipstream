@@ -3,7 +3,11 @@ import type {
   CoreMessage,
   CoreToolMessage,
   Message,
+  ToolContent,
   ToolInvocation,
+  TextPart,
+  ToolCallPart,
+  ToolResultPart,
 } from 'ai';
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -84,15 +88,56 @@ function addToolMessageToChat({
   });
 }
 
+// Add type guard for ToolContent
+function isToolContent(content: any): content is ToolContent {
+  return Array.isArray(content) && content.every(item => 
+    'type' in item && 
+    (item.type === 'tool-result' || item.type === 'tool-call')
+  );
+}
+
+// Add type guard for CoreToolMessage
+function isCoreToolMessage(message: DBMessage): message is CoreToolMessage & DBMessage {
+  return message.role === 'tool' && 
+         typeof message.content !== 'string' && 
+         isToolContent(message.content);
+}
+
+// Add type definitions for message content
+interface TextContent {
+  type: 'text';
+  text: string;
+}
+
+interface ToolCallContent {
+  type: 'tool-call';
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+interface ToolResultContent {
+  type: 'tool-result';
+  toolCallId: string;
+  result: unknown;
+}
+
+type MessageContent = TextContent | ToolCallContent | ToolResultContent;
+
 export function convertToUIMessages(
   messages: Array<DBMessage>,
 ): Array<Message> {
   return messages.reduce((chatMessages: Array<Message>, message) => {
     if (message.role === 'tool') {
-      return addToolMessageToChat({
-        toolMessage: message as CoreToolMessage,
-        messages: chatMessages,
-      });
+      // Only convert to CoreToolMessage if it matches the expected structure
+      if (isCoreToolMessage(message)) {
+        return addToolMessageToChat({
+          toolMessage: message,
+          messages: chatMessages,
+        });
+      }
+      // If it doesn't match, skip this message
+      return chatMessages;
     }
 
     let textContent = '';
@@ -100,8 +145,12 @@ export function convertToUIMessages(
 
     if (typeof message.content === 'string') {
       textContent = message.content;
-    } else if (Array.isArray(message.content)) {
-      for (const content of message.content) {
+    } else if (message.content && typeof message.content === 'object') {
+      const contentArray = Array.isArray(message.content) 
+        ? message.content as MessageContent[]
+        : [message.content as MessageContent];
+        
+      for (const content of contentArray) {
         if (content.type === 'text') {
           textContent += content.text;
         } else if (content.type === 'tool-call') {
@@ -126,16 +175,17 @@ export function convertToUIMessages(
   }, []);
 }
 
+// Update sanitizeResponseMessages for better type safety
 export function sanitizeResponseMessages(
   messages: Array<CoreToolMessage | CoreAssistantMessage>,
 ): Array<CoreToolMessage | CoreAssistantMessage> {
-  const toolResultIds: Array<string> = [];
+  const toolResultIds: Set<string> = new Set();
 
   for (const message of messages) {
-    if (message.role === 'tool') {
+    if (message.role === 'tool' && Array.isArray(message.content)) {
       for (const content of message.content) {
-        if (content.type === 'tool-result') {
-          toolResultIds.push(content.toolCallId);
+        if ('type' in content && content.type === 'tool-result' && 'toolCallId' in content) {
+          toolResultIds.add(content.toolCallId);
         }
       }
     }
@@ -143,15 +193,17 @@ export function sanitizeResponseMessages(
 
   const messagesBySanitizedContent = messages.map((message) => {
     if (message.role !== 'assistant') return message;
-
     if (typeof message.content === 'string') return message;
+    if (!Array.isArray(message.content)) return message;
 
-    const sanitizedContent = message.content.filter((content) =>
-      content.type === 'tool-call'
-        ? toolResultIds.includes(content.toolCallId)
-        : content.type === 'text'
-          ? content.text.length > 0
-          : true,
+    const sanitizedContent = message.content.filter((content): content is TextPart | ToolCallPart =>
+      'type' in content && (
+        content.type === 'tool-call'
+          ? 'toolCallId' in content && toolResultIds.has(content.toolCallId)
+          : content.type === 'text'
+            ? 'text' in content && content.text.length > 0
+            : false
+      )
     );
 
     return {
@@ -161,7 +213,9 @@ export function sanitizeResponseMessages(
   });
 
   return messagesBySanitizedContent.filter(
-    (message) => message.content.length > 0,
+    (message) => 
+      typeof message.content === 'string' || 
+      (Array.isArray(message.content) && message.content.length > 0)
   );
 }
 
@@ -210,15 +264,17 @@ export function getDocumentTimestampByIndex(
   if (!documents) return new Date();
   if (index > documents.length) return new Date();
 
-  return documents[index].createdAt;
+  return new Date(documents[index].created_at);
 }
 
-export function getMessageIdFromAnnotations(message: Message) {
-  if (!message.annotations) return message.id;
+// Add type definition for MessageAnnotation
+interface MessageAnnotation {
+  messageIdFromServer?: string;
+  [key: string]: unknown;
+}
 
-  const [annotation] = message.annotations;
-  if (!annotation) return message.id;
-
-  // @ts-expect-error messageIdFromServer is not defined in MessageAnnotation
-  return annotation.messageIdFromServer;
+// Update getMessageIdFromAnnotations with proper typing
+export function getMessageIdFromAnnotations(message: Message & { annotations?: MessageAnnotation[] }) {
+  if (!message.annotations?.length) return message.id;
+  return message.annotations[0]?.messageIdFromServer ?? message.id;
 }
