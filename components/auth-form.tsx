@@ -1,13 +1,11 @@
 'use client';
 
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Button } from './ui/button';
 
 export function AuthForm({
   action,
@@ -35,17 +33,19 @@ export function AuthForm({
           setIsLoading(false);
         }
       }}
-      className="flex flex-col gap-4 px-4 sm:px-16"
+      className="flex flex-col gap-4"
     >
       <div className="flex flex-col gap-2">
-        <Label htmlFor="email">Email Address</Label>
+        <Label htmlFor="email">Email</Label>
         <Input
           id="email"
           name="email"
           type="email"
-          placeholder="you@example.com"
+          placeholder="name@example.com"
           defaultValue={defaultEmail}
           required
+          disabled={isLoading}
+          className="rounded-md"
         />
       </div>
       <div className="flex flex-col gap-2">
@@ -55,6 +55,8 @@ export function AuthForm({
           name="password"
           type="password"
           required
+          disabled={isLoading}
+          className="rounded-md"
         />
       </div>
       {children}

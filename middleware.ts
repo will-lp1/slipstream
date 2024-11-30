@@ -13,13 +13,13 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Redirect authenticated users away from auth pages
-  if (session && (pathname === '/login' || pathname === '/register')) {
+  if (session && pathname.startsWith('/auth')) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
   // Protect main app routes
-  if (!session && pathname !== '/login' && pathname !== '/register' && !pathname.startsWith('/auth/')) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  if (!session && !pathname.startsWith('/auth/')) {
+    return NextResponse.redirect(new URL('/auth', request.url));
   }
 
   return res;

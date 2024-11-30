@@ -14,7 +14,7 @@ export async function saveChat({
 }) {
   try {
     const supabase = createServerClient();
-    const { error } = await supabase
+    const { error } = await (await supabase)
       .from('chat')
       .insert({ id, user_id: userId, title, created_at: new Date().toISOString() });
 
@@ -27,7 +27,7 @@ export async function saveChat({
 
 export async function getChatsByUserId({ id }: { id: string }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { data, error } = await supabase
       .from('chat')
       .select('*')
@@ -52,7 +52,7 @@ export async function saveMessage({
   chatId: string;
 }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('message')
       .insert({ content, role, chat_id: chatId });
@@ -66,7 +66,7 @@ export async function saveMessage({
 
 export async function getMessagesByChatId(chatId: string) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { data, error } = await supabase
       .from('message')
       .select('*')
@@ -91,7 +91,7 @@ export async function saveEmbedding({
   documentId: string;
 }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('embeddings')
       .insert({ content, embedding, document_id: documentId });
@@ -113,7 +113,7 @@ export async function searchEmbeddings({
   limit?: number;
 }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { data, error } = await supabase
       .rpc('match_embeddings', {
         query_embedding: embedding,
@@ -141,7 +141,7 @@ export async function saveDocument({
   title: string;
 }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { data, error } = await supabase
       .from('documents')
       .insert({ 
@@ -164,7 +164,7 @@ export async function saveDocument({
 
 export async function getDocumentById({ id }: { id: string }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { data, error } = await supabase
       .from('documents')
       .select('*')
@@ -187,7 +187,7 @@ export async function deleteDocumentsByIdAfterTimestamp({
   timestamp: Date;
 }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('documents')
       .delete()
@@ -213,7 +213,7 @@ export async function saveDocumentWithEmbeddings({
   userId: string;
 }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     
     // First save the document
     const { data: document, error: docError } = await supabase
@@ -254,7 +254,7 @@ export async function saveDocumentWithEmbeddings({
 
 export async function deleteChatById({ id }: { id: string }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('chat')
       .delete()
@@ -269,7 +269,7 @@ export async function deleteChatById({ id }: { id: string }) {
 
 export async function getChatById({ id }: { id: string }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { data, error } = await supabase
       .from('chat')
       .select('*')
@@ -292,7 +292,7 @@ export async function getChatById({ id }: { id: string }) {
 
 export async function saveMessages({ messages }: { messages: Array<Partial<Message>> }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('message')
       .insert(messages.map(msg => ({
@@ -309,7 +309,7 @@ export async function saveMessages({ messages }: { messages: Array<Partial<Messa
 
 export async function saveSuggestions({ suggestions }: { suggestions: Array<Suggestion> }) {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('suggestions')
       .insert(suggestions.map(suggestion => ({
