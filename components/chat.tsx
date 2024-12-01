@@ -29,6 +29,7 @@ export function Chat({
   const { mutate } = useSWRConfig();
   const [currentModelId, setCurrentModelId] = useState(selectedModelId);
   const [chatMessages, setChatMessages] = useState(initialMessages);
+  const [currentInput, setCurrentInput] = useState('');
 
   const {
     messages,
@@ -41,23 +42,26 @@ export function Chat({
     stop,
     data: streamingData,
   } = useChat({
-    api: currentModelId === 'claude-haiku-search' 
-      ? '/api/search'  
-      : '/api/chat',   
+    api: '/api',
     id,
     initialMessages: chatMessages,
     body: {
       id,
       modelId: currentModelId,
+      functions: currentInput.match(/@(\w+)/g)?.map(f => f.slice(1)) || [],
     },
     onResponse(response) {
       // ... existing response handling ...
     },
     onFinish() {
-      // Update our chat messages when a response finishes
       setChatMessages(messages);
     },
   });
+
+  // Keep input in sync
+  useEffect(() => {
+    setCurrentInput(input);
+  }, [input]);
 
   // Keep messages in sync with chat state
   useEffect(() => {
