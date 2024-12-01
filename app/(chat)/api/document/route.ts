@@ -1,4 +1,5 @@
 import { createServerClient } from '@/lib/supabase/server';
+import { auth } from '@/lib/auth';
 import {
   deleteDocumentsByIdAfterTimestamp,
   getDocumentById,
@@ -7,9 +8,10 @@ import {
 
 export async function GET(request: Request) {
   const supabase = createServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session }, error } = await supabase.auth.getSession();
 
-  if (!session?.user) {
+  if (error || !session?.user) {
+    console.error('Auth error:', error);
     return new Response('Unauthorized', { status: 401 });
   }
 
@@ -34,10 +36,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const supabase = createServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
-
-  if (!session?.user) {
+  const user = await auth();
+  
+  if (!user) {
     return new Response('Unauthorized', { status: 401 });
   }
 
@@ -51,12 +52,12 @@ export async function POST(request: Request) {
   const { content, title }: { content: string; title: string } =
     await request.json();
 
-  if (session.user?.id) {
+  if (user?.id) {
     const document = await saveDocument({
       id,
       content,
       title,
-      userId: session.user.id,
+      userId: user.id,
     });
 
     return Response.json(document, { status: 200 });
@@ -65,10 +66,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const supabase = createServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
-
-  if (!session?.user) {
+  const user = await auth();
+  
+  if (!user) {
     return new Response('Unauthorized', { status: 401 });
   }
 
@@ -85,7 +85,7 @@ export async function PATCH(request: Request) {
 
   const [document] = documents;
 
-  if (document.userId !== session.user.id) {
+  if (document.userId !== user.id) {
     return new Response('Unauthorized', { status: 401 });
   }
 
