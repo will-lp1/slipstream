@@ -1,7 +1,6 @@
 'use client';
 
-import { startTransition, useMemo, useOptimistic, useState } from 'react';
-
+import { useState } from 'react';
 import { saveModelId } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,26 +11,30 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { models } from '@/lib/ai/models';
 import { cn } from '@/lib/utils';
-
 import { CheckCirclFillIcon, ChevronDownIcon } from './icons';
 
 export function ModelSelector({
   selectedModelId,
   className,
+  onModelChange
 }: {
   selectedModelId: string;
-} & React.ComponentProps<typeof Button>) {
-  const [open, setOpen] = useState(false);
-  const [optimisticModelId, setOptimisticModelId] =
-    useOptimistic(selectedModelId);
+  className?: string;
+  onModelChange: (modelId: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedModel = models.find(model => model.id === selectedModelId);
 
-  const selectModel = useMemo(
-    () => models.find((model) => model.id === optimisticModelId),
-    [optimisticModelId],
-  );
+  const handleModelChange = async (modelId: string) => {
+    setIsOpen(false);
+    // Update cookie in background
+    await saveModelId(modelId);
+    // Update local state immediately
+    onModelChange(modelId);
+  };
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger
         asChild
         className={cn(
@@ -40,7 +43,7 @@ export function ModelSelector({
         )}
       >
         <Button variant="outline" className="md:px-2 md:h-[34px]">
-          {selectModel?.label}
+          {selectedModel?.label}
           <ChevronDownIcon />
         </Button>
       </DropdownMenuTrigger>
@@ -48,16 +51,9 @@ export function ModelSelector({
         {models.map((model) => (
           <DropdownMenuItem
             key={model.id}
-            onSelect={() => {
-              setOpen(false);
-
-              startTransition(() => {
-                setOptimisticModelId(model.id);
-                saveModelId(model.id);
-              });
-            }}
+            onSelect={() => handleModelChange(model.id)}
             className="gap-4 group/item flex flex-row justify-between items-center"
-            data-active={model.id === optimisticModelId}
+            data-active={model.id === selectedModelId}
           >
             <div className="flex flex-col gap-1 items-start">
               {model.label}

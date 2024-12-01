@@ -11,10 +11,15 @@ import { BetterTooltip } from '@/components/ui/tooltip';
 import { PlusIcon, VercelIcon } from './icons';
 import { useSidebar } from './ui/sidebar';
 
-export function ChatHeader({ selectedModelId }: { selectedModelId: string }) {
+export function ChatHeader({ 
+  selectedModelId,
+  onModelChange 
+}: { 
+  selectedModelId: string;
+  onModelChange: (modelId: string) => void;
+}) {
   const router = useRouter();
   const { open } = useSidebar();
-
   const { width: windowWidth } = useWindowSize();
 
   return (
@@ -38,6 +43,7 @@ export function ChatHeader({ selectedModelId }: { selectedModelId: string }) {
       <ModelSelector
         selectedModelId={selectedModelId}
         className="order-1 md:order-2"
+        onModelChange={onModelChange}
       />
       <Button
         className="bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-zinc-50 dark:text-zinc-900 hidden md:flex py-1.5 px-2 h-fit md:h-[34px] order-4 md:ml-auto"

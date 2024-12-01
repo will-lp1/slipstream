@@ -27,6 +27,7 @@ export function Chat({
   selectedModelId: string;
 }) {
   const { mutate } = useSWRConfig();
+  const [currentModelId, setCurrentModelId] = useState(selectedModelId);
 
   const {
     messages,
@@ -39,14 +40,14 @@ export function Chat({
     stop,
     data: streamingData,
   } = useChat({
-    api: selectedModelId === 'claude-haiku-search' 
-      ? '/api/search'  // Use search endpoint for web search model
-      : '/api/chat',   // Use chat endpoint for regular model
+    api: currentModelId === 'claude-haiku-search' 
+      ? '/api/search'  
+      : '/api/chat',   
     id,
     initialMessages,
     body: {
       id,
-      modelId: selectedModelId,
+      modelId: currentModelId,
     },
     onResponse(response) {
       // ... existing response handling ...
@@ -81,7 +82,10 @@ export function Chat({
   return (
     <>
       <div className="flex flex-col min-w-0 h-dvh bg-background">
-        <ChatHeader selectedModelId={selectedModelId} />
+        <ChatHeader 
+          selectedModelId={currentModelId} 
+          onModelChange={setCurrentModelId}
+        />
         <div
           ref={messagesContainerRef}
           className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4"
