@@ -3,7 +3,7 @@
 import type { Attachment, Message } from 'ai';
 import { useChat } from 'ai/react';
 import { AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useWindowSize } from 'usehooks-ts';
 
@@ -28,6 +28,7 @@ export function Chat({
 }) {
   const { mutate } = useSWRConfig();
   const [currentModelId, setCurrentModelId] = useState(selectedModelId);
+  const [chatMessages, setChatMessages] = useState(initialMessages);
 
   const {
     messages,
@@ -44,7 +45,7 @@ export function Chat({
       ? '/api/search'  
       : '/api/chat',   
     id,
-    initialMessages,
+    initialMessages: chatMessages,
     body: {
       id,
       modelId: currentModelId,
@@ -53,9 +54,15 @@ export function Chat({
       // ... existing response handling ...
     },
     onFinish() {
-      // ... existing finish handling ...
+      // Update our chat messages when a response finishes
+      setChatMessages(messages);
     },
   });
+
+  // Keep messages in sync with chat state
+  useEffect(() => {
+    setMessages(chatMessages);
+  }, [currentModelId]);
 
   const { width: windowWidth = 1920, height: windowHeight = 1080 } =
     useWindowSize();

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { saveModelId } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -25,11 +24,13 @@ export function ModelSelector({
   const [isOpen, setIsOpen] = useState(false);
   const selectedModel = models.find(model => model.id === selectedModelId);
 
-  const handleModelChange = async (modelId: string) => {
+  const handleModelChange = (modelId: string) => {
+    if (modelId === selectedModelId) {
+      setIsOpen(false);
+      return;
+    }
+    
     setIsOpen(false);
-    // Update cookie in background
-    await saveModelId(modelId);
-    // Update local state immediately
     onModelChange(modelId);
   };
 
