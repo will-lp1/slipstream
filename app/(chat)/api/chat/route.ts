@@ -13,7 +13,7 @@ import {
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 
-import { createServerClient } from '@/lib/supabase/server';
+import { createApiClient } from '@/lib/supabase/api';
 import { customModel } from '@/lib/ai';
 import { models } from '@/lib/ai/models';
 import { systemPrompt } from '@/lib/ai/prompts';
@@ -88,19 +88,12 @@ interface RequestSuggestionsParams {
 
 export async function POST(request: Request) {
   noStore();
-  const supabase = createServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
-
-  if (!session?.user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
+  
   try {
     const {
-      id,
       messages,
       modelId,
-    }: { id: string; messages: Array<Message>; modelId: string } =
+    }: { messages: Array<Message>; modelId: string } =
       await request.json();
 
     const model = models.find((model) => model.id === modelId);
@@ -115,32 +108,6 @@ export async function POST(request: Request) {
     if (!userMessage) {
       return new Response('No user message found', { status: 400 });
     }
-
-    // Create new chat if it doesn't exist
-    const chat = await getChatById({ id });
-    
-    if (!chat) {
-      const title = await generateTitleFromUserMessage({ message: userMessage });
-      await saveChat({ 
-        id, 
-        userId: session.user.id, 
-        title 
-      });
-    }
-
-    // Save the user message
-    await saveMessages({
-      messages: [
-        { 
-          chat_id: id,
-          role: userMessage.role,
-          content: typeof userMessage.content === 'string' 
-            ? userMessage.content 
-            : JSON.stringify(userMessage.content),
-          created_at: new Date().toISOString(),
-        },
-      ],
-    });
 
     const streamingData = new StreamData();
 
@@ -173,12 +140,12 @@ export async function POST(request: Request) {
             title: z.string(),
           }),
           execute: async ({ title }: CreateDocumentParams) => {
-            const id = generateUUID();
+            const documentId = generateUUID();
             let draftText = '';
 
             streamingData.append({
               type: 'id',
-              content: id,
+              content: documentId,
             });
 
             streamingData.append({
@@ -212,28 +179,25 @@ export async function POST(request: Request) {
 
             streamingData.append({ type: 'finish', content: '' });
 
-            if (session.user?.id) {
-              try {
-                await saveDocument({
-                  id,
-                  title,
-                  content: draftText,
-                  userId: session.user.id,
-                });
+            try {
+              const userId = generateUUID();
+              await saveDocument({
+                id: documentId,
+                title,
+                content: draftText,
+                userId,
+              });
 
-                return {
-                  id,
-                  title,
-                  content: draftText,
-                  message: 'Document created successfully',
-                };
-              } catch (error) {
-                console.error('Failed to save document:', error);
-                throw error;
-              }
+              return {
+                id: documentId,
+                title,
+                content: draftText,
+                message: 'Document created successfully',
+              };
+            } catch (error) {
+              console.error('Failed to save document:', error);
+              throw error;
             }
-
-            throw new Error('User not authenticated');
           },
         },
         updateDocument: {
@@ -284,28 +248,25 @@ export async function POST(request: Request) {
 
             streamingData.append({ type: 'finish', content: '' });
 
-            if (session.user?.id) {
-              try {
-                await saveDocument({
-                  id,
-                  title: document.title,
-                  content: draftText,
-                  userId: session.user.id,
-                });
+            try {
+              const userId = generateUUID();
+              await saveDocument({
+                id,
+                title: document.title,
+                content: draftText,
+                userId,
+              });
 
-                return {
-                  id,
-                  title: document.title,
-                  content: draftText,
-                  message: 'Document updated successfully',
-                };
-              } catch (error) {
-                console.error('Failed to update document:', error);
-                throw error;
-              }
+              return {
+                id,
+                title: document.title,
+                content: draftText,
+                message: 'Document updated successfully',
+              };
+            } catch (error) {
+              console.error('Failed to update document:', error);
+              throw error;
             }
-
-            throw new Error('User not authenticated');
           },
         },
         requestSuggestions: {
@@ -360,9 +321,8 @@ export async function POST(request: Request) {
               suggestions.push(suggestion);
             }
 
-            if (session.user?.id) {
-              const userId = session.user.id;
-
+            try {
+              const userId = generateUUID();
               await saveSuggestions({
                 suggestions: suggestions.map((suggestion) => ({
                   ...suggestion,
@@ -371,6 +331,9 @@ export async function POST(request: Request) {
                   documentCreatedAt: document.createdAt,
                 })),
               });
+            } catch (error) {
+              console.error('Failed to save suggestions:', error);
+              throw error;
             }
 
             return {
@@ -381,34 +344,8 @@ export async function POST(request: Request) {
           },
         },
       },
-      onFinish: async ({ responseMessages }) => {
-        if (session.user?.id) {
-          try {
-            const responseMessagesWithoutIncompleteToolCalls =
-              sanitizeResponseMessages(responseMessages);
-
-            await saveMessages({
-              messages: responseMessagesWithoutIncompleteToolCalls.map(
-                (message) => ({
-                  chat_id: id,
-                  role: message.role,
-                  content: typeof message.content === 'string' 
-                    ? message.content 
-                    : JSON.stringify(message.content),
-                  created_at: new Date().toISOString(),
-                }),
-              ),
-            });
-          } catch (error) {
-            console.error('Failed to save chat:', error);
-          }
-        }
-
+      onFinish: () => {
         streamingData.close();
-      },
-      experimental_telemetry: {
-        isEnabled: true,
-        functionId: 'stream-text',
       },
     });
 
@@ -424,6 +361,13 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const supabase = createApiClient(request);
+  const { data: { session }, error: authError } = await supabase.auth.getSession();
+
+  if (authError || !session?.user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 

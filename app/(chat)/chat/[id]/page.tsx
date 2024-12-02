@@ -16,10 +16,10 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     notFound();
   }
 
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data: { session } } = await supabase.auth.getSession();
 
-  if (!session || !session.user) {
+  if (!session?.user) {
     return notFound();
   }
 

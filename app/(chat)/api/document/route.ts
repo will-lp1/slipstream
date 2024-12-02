@@ -1,20 +1,12 @@
-import { createServerClient } from '@/lib/supabase/server';
-import { auth } from '@/lib/auth';
 import {
-  deleteDocumentsByIdAfterTimestamp,
   getDocumentById,
   saveDocument,
 } from '@/lib/db/queries';
+import { createServerClient } from '@/lib/supabase/server';
+import { unstable_noStore as noStore } from 'next/cache';
 
 export async function GET(request: Request) {
-  const supabase = createServerClient();
-  const { data: { session }, error } = await supabase.auth.getSession();
-
-  if (error || !session?.user) {
-    console.error('Auth error:', error);
-    return new Response('Unauthorized', { status: 401 });
-  }
-
+  noStore();
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
@@ -22,26 +14,37 @@ export async function GET(request: Request) {
     return new Response('Missing id', { status: 400 });
   }
 
-  const document = await getDocumentById({ id });
+  try {
+    const supabase = await createServerClient();
+    const { data: { session } } = await supabase.auth.getSession();
 
-  if (!document) {
-    return new Response('Not Found', { status: 404 });
+    if (!session?.user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const document = await getDocumentById({ id });
+
+    if (!document) {
+      return new Response('Not Found', { status: 404 });
+    }
+
+    // Check if document belongs to user
+    if (document.user_id !== session.user.id) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    return Response.json(document, { status: 200 });
+  } catch (error) {
+    console.error('Error fetching document:', error);
+    return Response.json(
+      { error: 'Failed to fetch document' },
+      { status: 500 }
+    );
   }
-
-  if (document.user_id !== session.user.id) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
-  return Response.json([document], { status: 200 });
 }
 
 export async function POST(request: Request) {
-  const user = await auth();
-  
-  if (!user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
+  noStore();
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
@@ -49,50 +52,30 @@ export async function POST(request: Request) {
     return new Response('Missing id', { status: 400 });
   }
 
-  const { content, title }: { content: string; title: string } =
-    await request.json();
+  try {
+    const supabase = await createServerClient();
+    const { data: { session } } = await supabase.auth.getSession();
 
-  if (user?.id) {
+    if (!session?.user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { content, title }: { content: string; title: string } =
+      await request.json();
+
     const document = await saveDocument({
       id,
       content,
       title,
-      userId: user.id,
+      userId: session.user.id,
     });
 
     return Response.json(document, { status: 200 });
+  } catch (error) {
+    console.error('Error saving document:', error);
+    return Response.json(
+      { error: 'Failed to save document' },
+      { status: 500 }
+    );
   }
-  return new Response('Unauthorized', { status: 401 });
-}
-
-export async function PATCH(request: Request) {
-  const user = await auth();
-  
-  if (!user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get('id');
-
-  const { timestamp }: { timestamp: string } = await request.json();
-
-  if (!id) {
-    return new Response('Missing id', { status: 400 });
-  }
-
-  const documents = await getDocumentById({ id });
-
-  const [document] = documents;
-
-  if (document.userId !== user.id) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
-  await deleteDocumentsByIdAfterTimestamp({
-    id,
-    timestamp: new Date(timestamp),
-  });
-
-  return new Response('Deleted', { status: 200 });
 }

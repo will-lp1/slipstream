@@ -9,9 +9,7 @@ export type AuthSession = {
 } | null;
 
 export async function getSession(): Promise<AuthSession> {
-  const cookieStore = cookies();
-  const supabase = createServerClient();
-  
+  const supabase = await createServerClient();
   const { data: { session }, error } = await supabase.auth.getSession();
   
   if (error || !session?.user) {

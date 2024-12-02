@@ -1,6 +1,6 @@
 import { type Message, StreamData, convertToCoreMessages, streamText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
-import { createServerClient } from '@/lib/supabase/server';
+import { createApiClient } from '@/lib/supabase/api';
 import { unstable_noStore as noStore } from 'next/cache';
 import { models } from '@/lib/ai/models';
 import { systemPrompt } from '@/lib/ai/prompts';
@@ -27,14 +27,16 @@ interface ParsedFunctionResponse {
 
 export async function POST(request: Request) {
   noStore();
-  const supabase = createServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
-
-  if (!session?.user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
+  
   try {
+    const supabase = createApiClient(request);
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+
+    if (authError || !session?.user) {
+      console.error('Auth error:', authError);
+      return new Response('Unauthorized', { status: 401 });
+    }
+
     const {
       id,
       messages,
@@ -159,16 +161,21 @@ Format web citations with numbers [1] and include a Sources section at the end w
     });
 
   } catch (error) {
-    console.error('Error in POST /api/:', error);
-    return new Response('An error occurred while processing your request', {
-      status: 500,
-    });
+    console.error('Error processing request:', error);
+    return new Response('Error processing request', { status: 500 });
   }
 }
 
 // Forward DELETE requests to the chat route
 export async function DELETE(request: Request) {
   try {
+    const supabase = createApiClient(request);
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+
+    if (authError || !session?.user) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+
     const response = await fetch(new URL('/api/chat', request.url), {
       method: 'DELETE',
       headers: request.headers,
