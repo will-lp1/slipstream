@@ -142,15 +142,26 @@ ${processedResults.map((result, index) =>
           ],
           onFinish: () => {
             streamingData.close();
-          }
+          },
         });
   
         return result.toDataStreamResponse({
           data: streamingData,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
         });
   
-      } catch (error) {
-        console.error('Error in chat:', error);
+      } catch (err: unknown) {
+        console.error('Search streaming error:', err);
+        streamingData.append({
+          type: 'error',
+          content: 'An error occurred during search',
+        });
+        streamingData.close();
+        
         return new Response('Error in chat', { status: 500 });
       }
   

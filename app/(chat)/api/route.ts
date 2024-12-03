@@ -27,6 +27,7 @@ interface ParsedFunctionResponse {
 
 export async function POST(request: Request) {
   noStore();
+  let streamingData: StreamData | undefined;
   
   try {
     const supabase = createApiClient(request);
@@ -44,64 +45,26 @@ export async function POST(request: Request) {
       functions = [],
     } = await request.json();
 
+    // Check for @web mention in the most recent user message
+    const userMessage = messages[messages.length - 1];
+    const hasWebMention = typeof userMessage?.content === 'string' && 
+      userMessage.content.includes('@web');
+
+    // If @web is mentioned, force the web search function
+    const functionsToExecute = hasWebMention ? ['web'] : functions;
+
     const model = models.find((m) => m.id === modelId);
     if (!model) {
       return new Response('Model not found', { status: 404 });
     }
 
-    const streamingData = new StreamData();
+    streamingData = new StreamData();
     const functionResponses: ParsedFunctionResponse[] = [];
 
-    // Execute each requested function and collect responses
-    for (const functionName of functions) {
-      let response;
-      try {
-        if (functionName === 'web') {
-          // Use the existing search route
-          response = await fetch(new URL('/api/search', request.url), {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              id,
-              messages,
-              modelId,
-            }),
-          });
-        } else {
-          response = await fetch(new URL(`/api/${functionName}`, request.url), {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              id,
-              messages,
-              modelId,
-            }),
-          });
-        }
-
-        if (!response.ok) {
-          console.error(`Error from ${functionName}:`, response.statusText);
-          continue;
-        }
-
-        const data = await response.json();
-        functionResponses.push({
-          route: functionName,
-          response: data,
-        });
-      } catch (error) {
-        console.error(`Error executing ${functionName}:`, error);
-      }
-    }
-
-    // If no functions or single function, use existing routing
-    if (functions.length <= 1) {
-      const routePath = modelId === 'claude-haiku-search' 
-        ? '/api/search' 
+    // If @web was mentioned or single function, use direct routing
+    if (hasWebMention || functionsToExecute.length <= 1) {
+      const routePath = hasWebMention || modelId === 'claude-haiku-search'
+        ? '/api/search'
         : '/api/chat';
 
       const response = await fetch(new URL(routePath, request.url), {
@@ -111,12 +74,98 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify({
           id,
-          messages,
+          messages: hasWebMention 
+            ? messages.map((msg: Message) => ({
+                ...msg,
+                content: typeof msg.content === 'string'
+                  ? msg.content.replace('@web', '').trim()
+                  : msg.content
+              }))
+            : messages,
           modelId,
         }),
       });
 
+      // Handle streaming response
+      if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
+        return response;
+      }
+
+      // Handle non-streaming response
+      if (!response.ok) {
+        throw new Error(`Error from ${routePath}: ${response.statusText}`);
+      }
+
       return response;
+    }
+
+    // For multiple functions, handle each one
+    for (const functionName of functionsToExecute) {
+      try {
+        const response = await fetch(new URL(`/api/${functionName}`, request.url), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id,
+            messages: functionName === 'web' 
+              ? messages.map((msg: Message) => ({
+                  ...msg,
+                  content: typeof msg.content === 'string'
+                    ? msg.content.replace('@web', '').trim()
+                    : msg.content
+                }))
+              : messages,
+            modelId,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error(`Error from ${functionName}:`, response.statusText);
+          continue;
+        }
+
+        // Handle streaming response
+        if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
+          const reader = response.body?.getReader();
+          if (!reader) continue;
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              // Convert binary data to string and parse as JSON
+              const text = new TextDecoder().decode(value);
+              const lines = text.split('\n').filter(line => line.trim());
+              
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const jsonData = JSON.parse(line.slice(6));
+                    streamingData.append(jsonData);
+                  } catch (e) {
+                    console.error('Error parsing stream data:', e);
+                  }
+                }
+              }
+            }
+          } finally {
+            reader.releaseLock();
+          }
+          continue;
+        }
+
+        // Handle JSON response
+        const data = await response.json();
+        functionResponses.push({
+          route: functionName,
+          response: data,
+        });
+      } catch (error) {
+        console.error(`Error executing ${functionName}:`, error);
+      }
     }
 
     // Enhanced prompt for combining responses
@@ -158,10 +207,22 @@ Format web citations with numbers [1] and include a Sources section at the end w
 
     return result.toDataStreamResponse({
       data: streamingData,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
 
   } catch (error) {
     console.error('Error processing request:', error);
+    if (streamingData) {
+      streamingData.append({
+        type: 'error',
+        content: 'An error occurred processing your request',
+      });
+      streamingData.close();
+    }
     return new Response('Error processing request', { status: 500 });
   }
 }
