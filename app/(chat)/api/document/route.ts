@@ -1,54 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createApiClient } from '@/lib/supabase/api';
 import { unstable_noStore as noStore } from 'next/cache';
-
-export async function GET(request: Request) {
-  noStore();
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return NextResponse.json({ error: 'Missing id' }, { status: 400 });
-  }
-
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    return NextResponse.json({ error: 'Invalid document ID format' }, { status: 400 });
-  }
-
-  try {
-    const supabase = await createServerClient();
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { data, error } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (error) {
-      console.error('Database error:', error);
-      return NextResponse.json({ error: 'Failed to fetch document' }, { status: 500 });
-    }
-
-    if (!data) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-    }
-
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Error:', error);
-    return NextResponse.json(
-      { error: 'An error occurred while fetching the document.' },
-      { status: 500 }
-    );
-  }
-}
 
 export async function POST(request: Request) {
   noStore();
@@ -64,14 +16,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = await createServerClient();
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const { supabase } = createApiClient(request);
     const { content, title } = await request.json();
 
     const { data, error } = await supabase
@@ -80,7 +25,6 @@ export async function POST(request: Request) {
         id,
         content,
         title,
-        user_id: user.id,
         updated_at: new Date().toISOString()
       })
       .select()

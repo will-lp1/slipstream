@@ -1,20 +1,15 @@
-import { generateUUID } from '@/lib/utils';
+import { createClient } from '@supabase/supabase-js';
 
-// For demo purposes, return a mock session with a valid UUID
 export function createApiClient(request: Request) {
-  return {
-    auth: {
-      getSession: async () => ({
-        data: {
-          session: {
-            user: {
-              id: generateUUID(),
-              email: 'demo@example.com'
-            }
-          }
-        },
-        error: null
-      })
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: false // Don't persist session in API routes
+      }
     }
-  };
+  );
+
+  return { supabase };
 } 

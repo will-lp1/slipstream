@@ -1,253 +1,36 @@
-import { type Message, StreamData, convertToCoreMessages, streamText } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
-import { createApiClient } from '@/lib/supabase/api';
+import { NextRequest } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
-import { models } from '@/lib/ai/models';
-import { systemPrompt } from '@/lib/ai/prompts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-interface ParsedFunctionResponse {
-  route: string;
-  response: {
-    content?: string;
-    searchResults?: {
-      title: string;
-      url: string;
-      snippet: string;
-    }[];
-    vaultContent?: {
-      documents?: any[];
-      metadata?: any;
-      context?: string;
-    };
-  };
-}
-
 export async function POST(request: Request) {
   noStore();
-  let streamingData: StreamData | undefined;
   
-  try {
-    const supabase = createApiClient(request);
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      console.error('Auth error:', authError);
-      return new Response('Unauthorized', { status: 401 });
-    }
-
-    const {
-      id,
-      messages,
-      modelId,
-      functions = [],
-    } = await request.json();
-
-    // Check for @web mention in the most recent user message
-    const userMessage = messages[messages.length - 1];
-    const hasWebMention = typeof userMessage?.content === 'string' && 
-      userMessage.content.includes('@web');
-
-    // If @web is mentioned, force the web search function
-    const functionsToExecute = hasWebMention ? ['web'] : functions;
-
-    const model = models.find((m) => m.id === modelId);
-    if (!model) {
-      return new Response('Model not found', { status: 404 });
-    }
-
-    streamingData = new StreamData();
-    const functionResponses: ParsedFunctionResponse[] = [];
-
-    // If @web was mentioned or single function, use direct routing
-    if (hasWebMention || functionsToExecute.length <= 1) {
-      const routePath = hasWebMention || modelId === 'claude-haiku-search'
-        ? '/api/search'
-        : '/api/chat';
-
-      const response = await fetch(new URL(routePath, request.url), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id,
-          messages: hasWebMention 
-            ? messages.map((msg: Message) => ({
-                ...msg,
-                content: typeof msg.content === 'string'
-                  ? msg.content.replace('@web', '').trim()
-                  : msg.content
-              }))
-            : messages,
-          modelId,
-        }),
-      });
-
-      // Handle streaming response
-      if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
-        return response;
-      }
-
-      // Handle non-streaming response
-      if (!response.ok) {
-        throw new Error(`Error from ${routePath}: ${response.statusText}`);
-      }
-
-      return response;
-    }
-
-    // For multiple functions, handle each one
-    for (const functionName of functionsToExecute) {
-      try {
-        const response = await fetch(new URL(`/api/${functionName}`, request.url), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            id,
-            messages: functionName === 'web' 
-              ? messages.map((msg: Message) => ({
-                  ...msg,
-                  content: typeof msg.content === 'string'
-                    ? msg.content.replace('@web', '').trim()
-                    : msg.content
-                }))
-              : messages,
-            modelId,
-          }),
-        });
-
-        if (!response.ok) {
-          console.error(`Error from ${functionName}:`, response.statusText);
-          continue;
-        }
-
-        // Handle streaming response
-        if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
-          const reader = response.body?.getReader();
-          if (!reader) continue;
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              
-              // Convert binary data to string and parse as JSON
-              const text = new TextDecoder().decode(value);
-              const lines = text.split('\n').filter(line => line.trim());
-              
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  try {
-                    const jsonData = JSON.parse(line.slice(6));
-                    streamingData.append(jsonData);
-                  } catch (e) {
-                    console.error('Error parsing stream data:', e);
-                  }
-                }
-              }
-            }
-          } finally {
-            reader.releaseLock();
-          }
-          continue;
-        }
-
-        // Handle JSON response
-        const data = await response.json();
-        functionResponses.push({
-          route: functionName,
-          response: data,
-        });
-      } catch (error) {
-        console.error(`Error executing ${functionName}:`, error);
-      }
-    }
-
-    // Enhanced prompt for combining responses
-    const coreMessages = convertToCoreMessages(messages);
-    const result = await streamText({
-      model: anthropic('claude-3-haiku-20240307'),
-      system: `${systemPrompt}\n
-You have access to multiple data sources including search results and other functions. Your task is to:
-1. Analyze information from all available sources
-2. Extract key insights and relevant details
-3. Compare and contrast information when appropriate
-4. Combine the information into a coherent, well-structured response
-5. For web search results, cite sources using [1], [2] format and include URLs at the end
-6. For other sources, clearly indicate where information comes from
-
-Format web citations with numbers [1] and include a Sources section at the end with numbered URLs.`,
-      messages: [
-        ...coreMessages,
-        {
-          role: 'assistant',
-          content: `I have responses from multiple sources:\n\n${
-            functionResponses.map(fr => {
-              if (fr.route === 'web') {
-                // Format search results with their URLs
-                const searchResults = fr.response.searchResults || [];
-                return `=== Search Results ===\n${searchResults.map((result, idx) => 
-                  `[${idx + 1}] "${result.snippet}"\nSource: ${result.title} (${result.url})`
-                ).join('\n\n')}`;
-              }
-              return `=== ${fr.route} ===\n${JSON.stringify(fr.response, null, 2)}`;
-            }).join('\n\n')
-          }\n\nI'll provide a comprehensive analysis combining these sources.`,
-        }
-      ],
-      onFinish: () => {
-        streamingData.close();
-      },
-    });
-
-    return result.toDataStreamResponse({
-      data: streamingData,
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    });
-
-  } catch (error) {
-    console.error('Error processing request:', error);
-    if (streamingData) {
-      streamingData.append({
-        type: 'error',
-        content: 'An error occurred processing your request',
-      });
-      streamingData.close();
-    }
-    return new Response('Error processing request', { status: 500 });
-  }
+  // Forward the request directly to the chat endpoint
+  const url = new URL(request.url);
+  url.pathname = '/api/chat';
+  
+  // Forward the original request stream
+  return await fetch(url, {
+    method: request.method,
+    headers: request.headers,
+    // @ts-ignore - duplex is needed for Node.js but not in RequestInit type
+    duplex: 'half',
+    body: request.body
+  });
 }
 
-// Forward DELETE requests to the chat route
 export async function DELETE(request: Request) {
-  try {
-    const supabase = createApiClient(request);
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return new Response('Unauthorized', { status: 401 });
-    }
-
-    const response = await fetch(new URL('/api/chat', request.url), {
-      method: 'DELETE',
-      headers: request.headers,
-    });
-
-    return response;
-  } catch (error) {
-    console.error('Error in DELETE /api/:', error);
-    return new Response('An error occurred while processing your request', {
-      status: 500,
-    });
-  }
-}
+  // Forward the request directly to the chat endpoint
+  const url = new URL(request.url);
+  url.pathname = '/api/chat';
   
+  // Forward without body for DELETE
+  return await fetch(url, {
+    method: request.method,
+    headers: request.headers,
+    // @ts-ignore - duplex is needed for Node.js but not in RequestInit type
+    duplex: 'half'
+  });
+}

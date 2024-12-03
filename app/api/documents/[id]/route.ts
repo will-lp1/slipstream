@@ -1,24 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createApiClient } from '@/lib/supabase/api';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const { supabase } = createApiClient(request);
     const { data, error } = await supabase
       .from('documents')
       .select('*')
       .eq('id', params.id)
-      .eq('user_id', session.user.id)
       .maybeSingle();
 
     if (error) {
@@ -45,13 +37,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const { supabase } = createApiClient(request);
     const { content, title } = await request.json();
 
     const { data, error } = await supabase
@@ -60,7 +46,6 @@ export async function POST(
         id: params.id,
         content,
         title,
-        user_id: session.user.id,
         updated_at: new Date().toISOString()
       })
       .select()
