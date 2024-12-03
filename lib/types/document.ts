@@ -12,4 +12,5 @@ export interface UseDocumentReturn {
   isSaving: boolean
   lastSaved?: Date
   error: Error | null
+  id: string
 } 

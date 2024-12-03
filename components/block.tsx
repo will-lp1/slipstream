@@ -22,7 +22,7 @@ import {
   useWindowSize,
 } from 'usehooks-ts';
 
-import type { Document, Suggestion } from '@/lib/db/schema';
+import type { Document, Suggestion } from '@/lib/types/schema';
 import { fetcher } from '@/lib/utils';
 
 import { DiffView } from './diffview';
@@ -95,10 +95,14 @@ export function Block({
     isLoading: isDocumentsFetching,
     mutate: mutateDocuments,
   } = useSWR<Array<Document>>(
-    block && block.status !== 'streaming'
-      ? `/api/document?id=${block.documentId}`
+    block && block.status !== 'streaming' && block.documentId
+      ? `/api/documents?id=${block.documentId}`
       : null,
     fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    }
   );
 
   const { data: suggestions } = useSWR<Array<Suggestion>>(
@@ -142,7 +146,7 @@ export function Block({
       if (!block) return;
 
       mutate<Array<Document>>(
-        `/api/document?id=${block.documentId}`,
+        `/api/documents?id=${block.documentId}`,
         async (currentDocuments) => {
           if (!currentDocuments) return undefined;
 
@@ -154,9 +158,13 @@ export function Block({
           }
 
           if (currentDocument.content !== updatedContent) {
-            await fetch(`/api/document?id=${block.documentId}`, {
+            await fetch(`/api/documents`, {
               method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
               body: JSON.stringify({
+                id: block.documentId,
                 title: block.title,
                 content: updatedContent,
               }),
@@ -167,7 +175,7 @@ export function Block({
             const newDocument = {
               ...currentDocument,
               content: updatedContent,
-              createdAt: new Date(),
+              created_at: new Date().toISOString(),
             };
 
             return [...currentDocuments, newDocument];

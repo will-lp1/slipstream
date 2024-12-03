@@ -1,42 +1,86 @@
-export type Database = {
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export interface Database {
   public: {
     Tables: {
-      chats: {
+      documents: {
         Row: {
           id: string
-          user_id: string
           title: string
+          content: string | null
+          user_id: string
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
-          user_id: string
           title: string
+          content?: string | null
+          user_id: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          content?: string | null
+          user_id?: string
           created_at?: string
           updated_at?: string
         }
       }
-      messages: {
+      suggestions: {
         Row: {
           id: string
-          chat_id: string
-          role: 'user' | 'assistant' | 'system'
-          content: string
+          document_id: string
+          user_id: string
+          original_text: string
+          suggested_text: string
+          description: string
+          is_resolved: boolean
           created_at: string
+          document_created_at: string
         }
         Insert: {
-          id?: string
-          chat_id: string
-          role: 'user' | 'assistant' | 'system'
-          content: string
+          id: string
+          document_id: string
+          user_id: string
+          original_text: string
+          suggested_text: string
+          description: string
+          is_resolved?: boolean
           created_at?: string
+          document_created_at: string
+        }
+        Update: {
+          id?: string
+          document_id?: string
+          user_id?: string
+          original_text?: string
+          suggested_text?: string
+          description?: string
+          is_resolved?: boolean
+          created_at?: string
+          document_created_at?: string
         }
       }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
     }
   }
 }
 
 // Export commonly used types
-export type Chat = Database['public']['Tables']['chats']['Row']
-export type Message = Database['public']['Tables']['messages']['Row'] 
