@@ -1,27 +1,22 @@
-import { cookies } from 'next/headers';
-
+import { createServerClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 import { AppSidebar } from '@/components/app-sidebar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-
-import { auth } from '../(auth)/auth';
-
-export const experimental_ppr = true;
 
 export default async function Layout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = await cookies();
-  const isCollapsed = cookieStore.get('sidebar:state')?.value !== 'true';
-  const session = await auth();
+  const supabase = createServerClient();
+  const { data: { session } } = await supabase.auth.getSession();
 
-  if (!session?.user) {
-    return null;
+  if (!session) {
+    redirect('/auth');
   }
 
   return (
-    <SidebarProvider defaultOpen={!isCollapsed}>
+    <SidebarProvider defaultOpen={true}>
       <AppSidebar user={session.user} />
       <SidebarInset>{children}</SidebarInset>
     </SidebarProvider>

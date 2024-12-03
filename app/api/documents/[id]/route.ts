@@ -1,34 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
-import { unstable_noStore as noStore } from 'next/cache';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
-export async function GET(request: Request) {
-  noStore();
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return NextResponse.json({ error: 'Missing id' }, { status: 400 });
-  }
-
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    return NextResponse.json({ error: 'Invalid document ID format' }, { status: 400 });
-  }
-
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const supabase = await createServerClient();
+    const supabase = createRouteHandlerClient({ cookies });
+    const { data: { session } } = await supabase.auth.getSession();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { data, error } = await supabase
       .from('documents')
       .select('*')
-      .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('id', params.id)
+      .eq('user_id', session.user.id)
       .maybeSingle();
 
     if (error) {
@@ -50,25 +40,15 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
-  noStore();
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get('id');
-
-  if (!id) {
-    return NextResponse.json({ error: 'Missing id' }, { status: 400 });
-  }
-
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    return NextResponse.json({ error: 'Invalid document ID format' }, { status: 400 });
-  }
-
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const supabase = await createServerClient();
+    const supabase = createRouteHandlerClient({ cookies });
+    const { data: { session } } = await supabase.auth.getSession();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -77,10 +57,10 @@ export async function POST(request: Request) {
     const { data, error } = await supabase
       .from('documents')
       .upsert({
-        id,
+        id: params.id,
         content,
         title,
-        user_id: user.id,
+        user_id: session.user.id,
         updated_at: new Date().toISOString()
       })
       .select()
@@ -99,4 +79,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
+} 

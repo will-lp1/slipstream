@@ -13,8 +13,8 @@ export async function saveChat({
   title: string;
 }) {
   try {
-    const supabase = createServerClient();
-    const { error } = await (await supabase)
+    const supabase = await createServerClient();
+    const { error } = await supabase
       .from('chat')
       .insert({ id, user_id: userId, title, created_at: new Date().toISOString() });
 

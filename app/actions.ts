@@ -4,7 +4,6 @@ import { type CoreUserMessage, generateText } from 'ai';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createServerClient } from '@/lib/supabase/server';
-import { customModel } from '@/lib/ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { revalidatePath } from 'next/cache';
 
@@ -35,7 +34,7 @@ export async function generateTitleFromUserMessage({
 }
 
 export async function login(formData: FormData) {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   
   const { error } = await supabase.auth.signInWithPassword({
     email: formData.get('email') as string,
@@ -52,7 +51,7 @@ export async function login(formData: FormData) {
 export async function register(formData: FormData) {
   const supabase = createServerClient();
   
-  const { error } = await supabase.auth.signUp({
+  const { error } = await (await supabase).auth.signUp({
     email: formData.get('email') as string,
     password: formData.get('password') as string,
     options: {

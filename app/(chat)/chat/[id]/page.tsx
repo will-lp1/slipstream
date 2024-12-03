@@ -20,11 +20,11 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
   const { data: { session } } = await supabase.auth.getSession();
 
   if (!session?.user) {
-    return notFound();
+    notFound();
   }
 
   if (session.user.id !== chat.userId) {
-    return notFound();
+    notFound();
   }
 
   const messagesFromDb = await getMessagesByChatId(id);

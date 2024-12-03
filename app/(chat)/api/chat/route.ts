@@ -93,20 +93,11 @@ export async function POST(request: Request) {
     const {
       messages,
       modelId,
-    }: { messages: Array<Message>; modelId: string } =
-      await request.json();
+    }: { messages: Array<Message>; modelId: string } = await request.json();
 
     const model = models.find((model) => model.id === modelId);
-
     if (!model) {
       return new Response('Model not found', { status: 404 });
-    }
-
-    const coreMessages = convertToCoreMessages(messages);
-    const userMessage = getMostRecentUserMessage(coreMessages);
-
-    if (!userMessage) {
-      return new Response('No user message found', { status: 400 });
     }
 
     const streamingData = new StreamData();
@@ -114,7 +105,7 @@ export async function POST(request: Request) {
     const result = await streamText({
       model: anthropic('claude-3-haiku-20240307'),
       system: systemPrompt,
-      messages: coreMessages,
+      messages: convertToCoreMessages(messages),
       maxSteps: 5,
       tools: {
         getWeather: {
@@ -128,7 +119,6 @@ export async function POST(request: Request) {
             const response = await fetch(
               `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m&hourly=temperature_2m&daily=sunrise,sunset&timezone=auto`,
             );
-
             const weatherData = await response.json();
             return weatherData;
           },
@@ -139,10 +129,24 @@ export async function POST(request: Request) {
           parameters: z.object({
             title: z.string(),
           }),
-          execute: async ({ title }: CreateDocumentParams) => {
+          execute: async ({ title }: { title: string }) => {
             const documentId = generateUUID();
-            let draftText = '';
+            
+            // Create document through your API route
+            const response = await fetch(`/api/document?id=${documentId}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title,
+                content: '', // Initial empty content
+              }),
+            });
 
+            if (!response.ok) {
+              throw new Error('Failed to create document');
+            }
+
+            // Send document info to client
             streamingData.append({
               type: 'id',
               content: documentId,
@@ -153,120 +157,43 @@ export async function POST(request: Request) {
               content: title,
             });
 
-            streamingData.append({
-              type: 'clear',
-              content: '',
-            });
-
-            const { fullStream } = await streamText({
-              model: anthropic('claude-3-haiku-20240307'),
-              system: 'Write about the given topic. Markdown is supported. Use headings wherever appropriate.',
-              prompt: title,
-            });
-
-            for await (const delta of fullStream) {
-              const { type } = delta;
-
-              if (type === 'text-delta') {
-                const { textDelta } = delta;
-                draftText += textDelta;
-                streamingData.append({
-                  type: 'text-delta',
-                  content: textDelta,
-                });
-              }
-            }
-
-            streamingData.append({ type: 'finish', content: '' });
-
-            try {
-              const userId = generateUUID();
-              await saveDocument({
-                id: documentId,
-                title,
-                content: draftText,
-                userId,
-              });
-
-              return {
-                id: documentId,
-                title,
-                content: draftText,
-                message: 'Document created successfully',
-              };
-            } catch (error) {
-              console.error('Failed to save document:', error);
-              throw error;
-            }
+            return { documentId, title };
           },
         },
         updateDocument: {
           name: 'updateDocument',
           description: 'Update a document with the given description',
           parameters: z.object({
-            id: z.string().describe('The ID of the document to update'),
-            description: z.string().describe('The description of changes that need to be made'),
+            id: z.string(),
+            description: z.string(),
           }),
-          execute: async ({ id, description }: UpdateDocumentParams) => {
-            const document = await getDocumentById({ id });
-
-            if (!document) {
+          execute: async ({ id, description }: { id: string; description: string }) => {
+            // Get current document
+            const getResponse = await fetch(`/api/document?id=${id}`);
+            if (!getResponse.ok) {
               throw new Error('Document not found');
             }
+            const document = await getResponse.json();
 
-            const { content: currentContent } = document;
-            let draftText = '';
-
-            streamingData.append({
-              type: 'clear',
-              content: document.title,
+            // Update through your API route
+            const updateResponse = await fetch(`/api/document?id=${id}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: document.title,
+                content: description,
+              }),
             });
 
-            const { fullStream } = await streamText({
-              model: anthropic('claude-3-haiku-20240307'),
-              system: 'You are a helpful writing assistant. Based on the description, please update the piece of writing.',
-              messages: [
-                {
-                  role: 'user',
-                  content: `Original text:\n${currentContent}\n\nUpdate request: ${description}`,
-                },
-              ],
-            });
-
-            for await (const delta of fullStream) {
-              const { type } = delta;
-
-              if (type === 'text-delta') {
-                const { textDelta } = delta;
-                draftText += textDelta;
-                streamingData.append({
-                  type: 'text-delta',
-                  content: textDelta,
-                });
-              }
+            if (!updateResponse.ok) {
+              throw new Error('Failed to update document');
             }
 
-            streamingData.append({ type: 'finish', content: '' });
-
-            try {
-              const userId = generateUUID();
-              await saveDocument({
-                id,
-                title: document.title,
-                content: draftText,
-                userId,
-              });
-
-              return {
-                id,
-                title: document.title,
-                content: draftText,
-                message: 'Document updated successfully',
-              };
-            } catch (error) {
-              console.error('Failed to update document:', error);
-              throw error;
-            }
+            return {
+              id,
+              title: document.title,
+              message: 'Document updated successfully',
+            };
           },
         },
         requestSuggestions: {
@@ -344,19 +271,23 @@ export async function POST(request: Request) {
           },
         },
       },
-      onFinish: () => {
-        streamingData.close();
-      },
     });
 
     return result.toDataStreamResponse({
       data: streamingData,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
+
   } catch (error) {
-    console.error('Error in POST /api/chat:', error);
-    return new Response('An error occurred while processing your request', {
-      status: 500,
-    });
+    console.error('Error in chat route:', error);
+    return new Response(
+      JSON.stringify({ error: 'An error occurred processing your request' }),
+      { status: 500 }
+    );
   }
 }
 

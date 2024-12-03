@@ -1,12 +1,12 @@
 'use server';
 
-import { createServerClient } from '../../lib/supabase/server';
+import { createServerClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 
 export async function login(formData: FormData) {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   
-  const { error } = await (await supabase).auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email: formData.get('email') as string,
     password: formData.get('password') as string,
   });
@@ -15,13 +15,17 @@ export async function login(formData: FormData) {
     return { error: error.message };
   }
 
-  redirect('/');
+  if (!data.session) {
+    return { error: 'No session created' };
+  }
+
+  redirect('/chat');
 }
 
 export async function register(formData: FormData) {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   
-  const { error } = await (await supabase).auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email: formData.get('email') as string,
     password: formData.get('password') as string,
     options: {
@@ -33,5 +37,9 @@ export async function register(formData: FormData) {
     return { error: error.message };
   }
 
-  redirect('/');
+  if (data.session) {
+    redirect('/chat');
+  }
+
+  return { message: 'Check your email for the confirmation link' };
 }
