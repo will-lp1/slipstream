@@ -1,25 +1,40 @@
 'use client';
-import { ChevronUp } from 'lucide-react';
-import Image from 'next/image';
-import type { User } from 'next-auth';
-import { signOut } from 'next-auth/react';
-import { useTheme } from 'next-themes';
 
+import { User } from '@supabase/supabase-js'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
+import { ChevronUp } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@/components/ui/dropdown-menu'
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@/components/ui/sidebar';
+} from '@/components/ui/sidebar'
 
-export function SidebarUserNav({ user }: { user: User }) {
-  const { setTheme, theme } = useTheme();
+interface SidebarUserNavProps {
+  user: User
+}
+
+export function SidebarUserNav({ user }: SidebarUserNavProps) {
+  const router = useRouter()
+  const supabase = createClient()
+  const { setTheme, theme } = useTheme()
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut()
+      router.push('/auth')
+    } catch (error) {
+      console.error('Error signing out:', error)
+    }
+  }
 
   return (
     <SidebarMenu>
@@ -27,21 +42,21 @@ export function SidebarUserNav({ user }: { user: User }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton className="data-[state=open]:bg-sidebar-accent bg-background data-[state=open]:text-sidebar-accent-foreground h-10">
-              <Image
-                src={`https://avatar.vercel.sh/${user.email}`}
-                alt={user.email ?? 'User Avatar'}
-                width={24}
-                height={24}
-                className="rounded-full"
-              />
+              <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium">
+                {user.email?.[0]?.toUpperCase() || '?'}
+              </div>
               <span className="truncate">{user?.email}</span>
-              <ChevronUp className="ml-auto" />
+              <ChevronUp className="ml-auto h-4 w-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             side="top"
             className="w-[--radix-popper-anchor-width]"
           >
+            <DropdownMenuItem className="text-muted-foreground">
+              {user.email}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               className="cursor-pointer"
               onSelect={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -49,22 +64,15 @@ export function SidebarUserNav({ user }: { user: User }) {
               {`Toggle ${theme === 'light' ? 'dark' : 'light'} mode`}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <button
-                type="button"
-                className="w-full cursor-pointer"
-                onClick={() => {
-                  signOut({
-                    redirectTo: '/',
-                  });
-                }}
-              >
-                Sign out
-              </button>
+            <DropdownMenuItem
+              onClick={handleSignOut}
+              className="cursor-pointer text-red-600"
+            >
+              Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  );
+  )
 }

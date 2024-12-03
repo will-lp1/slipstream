@@ -1,35 +1,37 @@
+import { NextResponse, NextRequest } from 'next/server'
 import {
   type Message,
   StreamData,
   convertToCoreMessages,
   streamText,
-} from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
-import { z } from 'zod';
-import { unstable_noStore as noStore } from 'next/cache';
-import { NextResponse } from 'next/server';
+} from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { z } from 'zod'
+import { unstable_noStore as noStore } from 'next/cache'
+import { models } from '@/lib/ai/models'
+import { systemPrompt } from '@/lib/ai/prompts'
 
-import { models } from '@/lib/ai/models';
-import { systemPrompt } from '@/lib/ai/prompts';
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
-export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export async function POST(request: NextRequest) {
+  noStore()
 
-export async function POST(request: Request) {
-  noStore();
-  
   try {
+    // Parse request
     const {
       messages,
       modelId,
-    }: { messages: Array<Message>; modelId: string } = await request.json();
+    }: { messages: Array<Message>; modelId: string } = await request.json()
 
-    const model = models.find((model) => model.id === modelId);
+    // Validate model
+    const model = models.find((m) => m.id === modelId)
     if (!model) {
-      return NextResponse.json({ error: 'Model not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Model not found' }, { status: 404 })
     }
 
-    const streamingData = new StreamData();
+    // Setup streaming
+    const streamingData = new StreamData()
 
     try {
       const result = await streamText({
@@ -48,15 +50,15 @@ export async function POST(request: Request) {
             execute: async ({ latitude, longitude }) => {
               const response = await fetch(
                 `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m&hourly=temperature_2m&daily=sunrise,sunset&timezone=auto`,
-              );
-              return await response.json();
+              )
+              return await response.json()
             },
           }
         },
         onFinish: () => {
-          streamingData.close();
+          streamingData.close()
         },
-      });
+      })
 
       return result.toDataStreamResponse({
         data: streamingData,
@@ -65,19 +67,20 @@ export async function POST(request: Request) {
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
         },
-      });
+      })
     } catch (err) {
-      console.error('Streaming error:', err);
+      console.error('Streaming error:', err)
+      streamingData.close()
       return NextResponse.json(
         { error: 'An error occurred during streaming' },
         { status: 500 }
-      );
+      )
     }
   } catch (error) {
-    console.error('Error in chat route:', error);
+    console.error('API error:', error)
     return NextResponse.json(
       { error: 'An error occurred processing your request' },
       { status: 500 }
-    );
+    )
   }
-}
+} 

@@ -1,9 +1,10 @@
-import { getUser } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { AppSidebar } from '@/components/app-sidebar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { createServerClient } from '@/lib/supabase/server';
+import { getUser } from '@/lib/auth';
 
-export default async function ChatLayout({
+export default async function VaultLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -26,4 +27,4 @@ export default async function ChatLayout({
       </SidebarProvider>
     </div>
   );
-} 
+}

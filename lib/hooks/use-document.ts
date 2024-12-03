@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import { debounce } from 'lodash';
-import type { Database } from '@/lib/supabase/types';
-import type { UseDocumentProps, UseDocumentReturn } from '@/lib/types/document';
+import type { Database } from '../supabase/types';
+import type { UseDocumentProps, UseDocumentReturn } from '../types/document';
 
 export function useDocument({
   id,
@@ -17,6 +17,8 @@ export function useDocument({
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date>();
   const [error, setError] = useState<Error | null>(null);
+  const saveQueue = useRef<Map<string, { content: string, title: string, version: number }>>(new Map());
+  const currentVersion = useRef<Map<string, number>>(new Map());
 
   // Load document
   useEffect(() => {
@@ -49,17 +51,25 @@ export function useDocument({
     loadDocument();
   }, [id, router]);
 
-  // Save document
-  const saveDocument = useCallback(
-    debounce(async (newContent: string, newTitle: string) => {
-      if (!id) return;
-
-      setIsSaving(true);
+  // Create debounced save function with queue processing
+  const debouncedSave = useCallback(
+    debounce(async (documentId: string) => {
       try {
-        const response = await fetch(`/api/document?id=${id}`, {
+        const queuedItem = saveQueue.current.get(documentId);
+        if (!queuedItem) return;
+
+        const { content, title, version } = queuedItem;
+
+        // Only proceed if this is still the latest version
+        if (version !== currentVersion.current.get(documentId)) {
+          return;
+        }
+
+        setIsSaving(true);
+        const response = await fetch(`/api/document?id=${documentId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: newContent, title: newTitle }),
+          body: JSON.stringify({ content, title }),
         });
 
         if (!response.ok) {
@@ -70,8 +80,11 @@ export function useDocument({
           throw new Error('Failed to save document');
         }
 
-        setLastSaved(new Date());
-        router.refresh();
+        // Only update state if this was the latest version
+        if (version === currentVersion.current.get(documentId)) {
+          setLastSaved(new Date());
+          saveQueue.current.delete(documentId);
+        }
       } catch (err) {
         console.error('Error saving document:', err);
         setError(err instanceof Error ? err : new Error('Failed to save document'));
@@ -79,18 +92,27 @@ export function useDocument({
         setIsSaving(false);
       }
     }, 1000),
-    [id, router]
+    [router]
   );
 
   const updateContent = useCallback((newContent: string) => {
     setContent(newContent);
-    saveDocument(newContent, title);
-  }, [title, saveDocument]);
+    debouncedSave(id);
+  }, [id, debouncedSave]);
 
   const updateTitle = useCallback((newTitle: string) => {
     setTitle(newTitle);
-    saveDocument(content, newTitle);
-  }, [content, saveDocument]);
+    debouncedSave(id);
+  }, [id, debouncedSave]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      debouncedSave.cancel();
+      saveQueue.current.clear();
+      currentVersion.current.clear();
+    };
+  }, [debouncedSave]);
 
   return {
     content,

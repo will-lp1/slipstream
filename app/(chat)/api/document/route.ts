@@ -1,23 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createApiClient } from '@/lib/supabase/api';
-import { unstable_noStore as noStore } from 'next/cache';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 
 export async function POST(request: Request) {
-  noStore();
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get('id');
+  noStore()
+  const { searchParams } = new URL(request.url)
+  const id = searchParams.get('id')
 
   if (!id) {
-    return NextResponse.json({ error: 'Missing id' }, { status: 400 });
-  }
-
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    return NextResponse.json({ error: 'Invalid document ID format' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing id' }, { status: 400 })
   }
 
   try {
-    const { supabase } = createApiClient(request);
-    const { content, title } = await request.json();
+    const supabase = createRouteHandlerClient({ cookies })
+    
+    // Verify authentication
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { content, title } = await request.json()
 
     const { data, error } = await supabase
       .from('documents')
@@ -25,22 +29,24 @@ export async function POST(request: Request) {
         id,
         content,
         title,
+        user_id: session.user.id,
         updated_at: new Date().toISOString()
       })
+      .eq('user_id', session.user.id) // Ensure user can only update their own documents
       .select()
-      .maybeSingle();
+      .single()
 
     if (error) {
-      console.error('Database error:', error);
-      return NextResponse.json({ error: 'Failed to save document' }, { status: 500 });
+      console.error('Database error:', error)
+      return NextResponse.json({ error: 'Failed to save document' }, { status: 500 })
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json(data)
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error:', error)
     return NextResponse.json(
       { error: 'An error occurred while saving the document.' },
       { status: 500 }
-    );
+    )
   }
 }
